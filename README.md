@@ -213,6 +213,65 @@ comparador validado por um controle de 22,6%). Mas numa linguagem que vende
 correção demonstrável, `f!(x) ≠ f(x)` merece registro. Não consegui reduzir a
 um caso mínimo — aritmética F32 simples com e sem `!` dá igual.
 
+## Raycaster de voxel, versão rápida
+
+`gfx/04_voxel_fast.bend` — mesma cena da 03, ~2,2x mais rápida, depois de ler
+a `bend3d.bend` (em `demos/app_slash_boss_3d`) por indicação do Victor Taelin,
+que observou que IAs escrevem Bend 3D lento por pensar em OpenGL.
+
+Os comentários dele no próprio código são a aula:
+
+> `Cell.fork`: *"a fork per pixel drowns in scheduling, a fork per cell leaves
+> lanes idle"*
+> `Tile.b16`: *"straight-line: a recursion costs a frame per square on the device"*
+> `Frame.show`: *"one bang, since a launch costs a fixed fee"*
+
+A 03 forkava nos 9 níveis da quadtree — 262 mil forks, um por pixel. A 04 forka
+até tiles de 8×8 e resolve os 64 pixels do tile em linha reta.
+
+### O que realmente comprou o ganho
+
+| | GPU ms/frame |
+|---|---|
+| 03: fork por pixel, raio partindo da câmera | ~91 |
+| + clip do raio contra a caixa do mundo | ~50 |
+| + fork por tile em vez de por pixel | ~48 |
+
+O peso está quase todo no **clip**: começar o DDA na fronteira da caixa em vez
+da câmera, e devolver céu na hora pra quem nem entra nela. A granularidade do
+fork rendeu ~4% aqui.
+
+Isso não contradiz o Taelin — é outra carga. A `bend3d` binariza triângulos por
+tile, então o tile é uma unidade de *trabalho compartilhado*. Num raycaster cada
+pixel é independente e não há nada a compartilhar, então o custo de escalonar
+não domina.
+
+### Duas otimizações que eu tentei e removi
+
+- **Tile plano** (se os 4 cantos do tile não entram na caixa, o tile inteiro é
+  céu): não acelerou **e comia 0,47% dos pixels**. A `bend3d` pode cortar por
+  tile com segurança porque o binning sabe exatamente quais tiles cada forma
+  toca. Quatro raios de amostra não sabem.
+- **Colapso de bloco 2×2** num único `Pix`: correto, mas sem ganho medido aqui.
+  Mantido, é barato.
+
+### Como eu errei medindo (de novo)
+
+Duas ablações minhas deram conclusão invertida porque o **controle** estava
+quebrado, não o código sob teste:
+
+1. Testei "sem clip" mantendo o fuel baixo (96) que só é suficiente *por causa*
+   do clip. O controle truncava os raios: imagem errada, e artificialmente
+   rápido. Conclusão errada: "o clip não serve pra nada".
+2. Depois comparei clip vs sem-clip com fuel alto e vi 6,2% de pixels
+   diferentes — e supus que o clip é que estava bugado. Era o contrário: sem o
+   clip as paredes de pedra desciam infinitamente pra fora do quadro. Só vi
+   isso **olhando as duas imagens**, não olhando os números.
+
+Regra que ficou: antes de confiar num controle, confirme que ele produz a
+imagem certa. Um controle mais rápido costuma estar fazendo menos trabalho
+porque está errado.
+
 ## Publicado no BendHub
 
 O conjunto provado está no [BendHub](https://hub.bend-lang.com), importável por
