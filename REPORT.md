@@ -2,14 +2,15 @@
 
 *(Versão em português: [RELATORIO.md](RELATORIO.md))*
 
-> **Correction, 18 Sep 2026.** Findings 2, 4 and 5 below are rewritten. The
-> earlier pair claimed `!` gave nothing on a raycaster and called the cause
-> unexplained; the cause was fork granularity, and my ablations had all been run
-> at the one depth where the GPU cannot win — which also inflated finding 2's
-> numbers by up to 25x. Re-verified on 2.0.6, with a
-> checksum control proving each variant renders the same image. Everything else
-> reproduced unchanged.
-
+> **Correction, 18 Sep 2026.** Findings 2, 4 and 5 are rewritten and finding 1
+> keeps its measurement but loses its explanation. The root cause was mine: I
+> read `--gpu` as the switch that turns the device on, so most of my "GPU vs
+> CPU" A/Bs had the GPU on both sides. With a correct baseline — removing the
+> `!` — the missing variable is fork granularity, which is invisible on the CPU
+> and worth up to 8x on the GPU. That is what finding 4 called an unexplained
+> mystery, and it had also inflated finding 2 by up to 25x. Re-verified on
+> 2.0.6, now with a checksum control proving each variant renders the same
+> image. Findings 3 and 6 reproduced unchanged.
 
 Notes from building three renderers in Bend over a couple of days: a Mandelbrot,
 a voxel raycaster, and an interactive voxel world with break/place. Everything

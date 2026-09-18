@@ -2,14 +2,15 @@
 
 *(English version: [REPORT.md](REPORT.md))*
 
-> **Correção, 18/09/2026.** Os achados 2, 4 e 5 abaixo foram reescritos. A dupla
-> anterior afirmava que o `!` não rendia nada num raycaster e dava a causa como
-> inexplicada; a causa era granularidade de fork, e minhas ablações tinham todas
-> sido rodadas na única profundidade em que a GPU não consegue ganhar — o que
-> também inflou os números do achado 2 em até 25x. Reconferido
-> na 2.0.6, com um controle de checksum provando que cada variante renderiza a
-> mesma imagem. Todo o resto reproduziu igual.
-
+> **Correção, 18/09/2026.** Os achados 2, 4 e 5 foram reescritos e o achado 1
+> mantém a medição mas perde a explicação. A causa raiz foi minha: eu li o
+> `--gpu` como a chave que liga o dispositivo, então a maioria dos meus A/Bs
+> "GPU vs CPU" tinha GPU nos dois lados. Com o baseline correto — tirar o `!` —
+> a variável que faltava é a granularidade do fork, que é invisível na CPU e
+> vale até 8x na GPU. É isso que o achado 4 chamava de mistério inexplicado, e
+> que também tinha inflado o achado 2 em até 25x. Reconferido na 2.0.6, agora
+> com um controle de checksum provando que cada variante renderiza a mesma
+> imagem. Achados 3 e 6 reproduziram iguais.
 
 Anotações de dois dias construindo três renderizadores em Bend: um Mandelbrot,
 um raycaster de voxel, e um mundo de voxel interativo com quebrar/colocar

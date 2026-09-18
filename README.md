@@ -6,7 +6,7 @@ CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
 ## Setup
 
-Bend **2.0.5** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
+Bend **2.0.6** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
 (o instalador escreveu em `~/.zshrc`). Precisa de um shell novo, ou:
 
 ```sh
@@ -103,9 +103,13 @@ mediana. 512×512 pixels × 200 iterações, checksum idêntico nos três backen
 
 | | ms/frame | ganho |
 |---|---|---|
-| 1 thread | 213 | — |
-| 10 cores | 31 | 6,9x |
-| **GPU (Metal)** | **8** | **26x** (3,9x sobre os 10 cores) |
+| sem `!`, 1 thread | 213 | — |
+| sem `!`, 10 threads | 31 | 6,9x |
+| **com `!`** | **8** | **26x** (3,9x sobre os 10 núcleos) |
+
+Aqui os três checksums batem (`99630108`), ao contrário do raycaster — o que
+reforça o achado do `!` não-neutro: a divergência vem do desempate do DDA, não
+de qualquer conta em F32.
 
 ### Como medir errado (três vezes seguidas)
 
