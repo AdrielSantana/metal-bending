@@ -469,6 +469,16 @@ quando a árvore só é lida e nunca solta dentro do fork. Não sei se cabe no
 modelo do runtime; é a capacidade exata que dissolveria o problema, e é uma
 pergunta para o autor, não uma espera.
 
+**Registrado upstream.** Este ponto é a [bendlang/bend#836](https://github.com/bendlang/bend/issues/836)
+(o custo de um `+Data` compartilhado dentro de um `!` só está documentado nos
+comentários de um demo; pede um parágrafo na seção de paralelismo do guia, e
+fecha com a pergunta do borrowed read). Os outros achados do dia:
+[#826](https://github.com/bendlang/bend/issues/826) (`--gpu` no guia),
+[#827](https://github.com/bendlang/bend/issues/827) (`U32.shln`/`U32.from_nat`
+O(n) invisíveis ao grep) e
+[#828](https://github.com/bendlang/bend/issues/828) (granularidade do fork:
+8x na GPU, nada na CPU).
+
 Para o que este repo se propôs — mostrar Bend renderizando no Metal e um
 mundo editável bit-exato — 7/32 ms em 256² é bom. Para virar jogo, é onde a
 próxima pessoa começa.
