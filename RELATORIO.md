@@ -126,6 +126,18 @@ cachear o nó da região do raio, e desenrolar o walk recursivo — as duas últ
 só pagam juntas (1.2x), o que parece dois custos em série. Detalhes no README e
 no histórico de commits do repo.
 
+**E a ressalva, medida.** Com N colunas editadas espalhadas (quebra em y=1,
+subterrânea, então só a forma da árvore muda — checksum idêntico em toda
+linha), 256²: 0 edições 7 ms, 16 edições 35, 64 → 38, 256 → 44, todas as 1024
+→ 41; a árvore cheia antiga dava 29. Ou seja, dezesseis edições espalhadas
+devolvem o custo inteiro, e um pouco mais fica pior que antes: o raio caminha
+os níveis de cima (agora `WNode`) *e* calcula o terreno ao achar `WNone`. O que
+o overlay vazio demonstra de fato é que o custo é tocar os nós compartilhados
+do topo por travessia; qualquer edição transforma a raiz num `WNode` e devolve
+esse custo a todo raio. O próximo passo óbvio, não feito: um bitmask de
+"região editada" carregado como dois `U32` escalares, para que só raios em
+regiões sujas toquem a árvore.
+
 **Repro:** `gfx/05_craft.bend`; as camadas são três variantes de uma linha do
 `refetch`.
 

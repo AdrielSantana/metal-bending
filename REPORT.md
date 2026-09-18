@@ -124,6 +124,17 @@ per-pixel loop, caching the ray's region node, and unrolling the recursive
 walk — the last two only pay together (1.2x), which reads like two costs in
 series. Details in the repo's README and commit history.
 
+**And the caveat, measured.** With N scattered edited columns (breaking at
+y=1, underground, so only the tree's shape changes — identical checksum on
+every row), 256²: 0 edits 7 ms, 16 edits 35, 64 → 38, 256 → 44, all 1024 →
+41; the old full tree was 29. So sixteen scattered edits give the whole cost
+back, and a few more make it worse than before: the ray walks the now-`WNode`
+top levels *and* computes the terrain at the `WNone`. What the empty overlay
+actually demonstrates is that the cost is touching the shared top nodes per
+crossing; any edit turns the root into a `WNode` and hands that cost back to
+every ray. The obvious next step, not done: a "region edited" bitmask carried
+as two `U32` scalars, so only rays in dirty regions touch the tree at all.
+
 **Repro:** `gfx/05_craft.bend`; the layers are three one-line variants of
 `refetch`.
 

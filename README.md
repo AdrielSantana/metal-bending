@@ -332,7 +332,7 @@ blocos, J (quebrar)   : 102281872   (-256 = exatamente um bit da altura 8)
 blocos, L (colocar)   : 102282384   (+256)
 ```
 
-### O custo, particionado — e resolvido
+### O custo, particionado — resolvido para o mundo intocado, não para o editado
 
 A árvore compartilhada era o gargalo. 512², checksum idêntico em todas as
 linhas, Bend 2.0.9, mediana de 5:
@@ -355,10 +355,32 @@ O que resolveu foi a regra do Taelin: uma árvore com refcount compartilhada por
 todos os pixels custa um atômico por uso, então toque nela o mínimo possível.
 Com o overlay, quase todo raio toca um nó (`WNone`) e calcula o resto.
 
-Na resolução do demo, 128²: **234 → 6 ms** ao longo da sessão. A edição segue
+O demo agora renderiza a **256²** (7 ms com o mundo intocado; era 39 com a
+árvore cheia). Em 128², ao longo da sessão: 234 → 6 ms. A edição segue
 bit-exata: checksum do mundo vazio `102282128` (idêntico ao da árvore antiga),
 quebrar/colocar dá exatamente ±2^y nos três caminhos do `wmod` novo, e o leitor
 recursivo do picking concorda com o desenrolado do render.
+
+**Mas o ganho é frágil.** Medindo o overlay com N colunas editadas, espalhadas
+pelo mundo (quebra em y=1, subterrânea, então só a *forma* da árvore muda —
+checksum idêntico em todas as linhas), 256², mediana de 5:
+
+| colunas editadas | ms/frame |
+|---|---|
+| 0 | **7** |
+| 16 | 35 |
+| 64 | 38 |
+| 256 | 44 |
+| 1024 (todas) | 41 |
+
+A árvore antiga, com todas as colunas, dava 29. Ou seja: **16 edições
+espalhadas já devolvem o custo inteiro, e com um pouco mais fica pior que
+antes** — o raio caminha os níveis de cima (agora `WNode`) *e* calcula o
+terreno ao achar `WNone`. O que o overlay vazio provou é que o custo é tocar
+os nós compartilhados do topo por travessia; qualquer edição transforma a raiz
+num `WNode` e devolve esse custo a todo raio. O próximo passo, ainda não
+feito, é um bitmask de "região editada" carregado como escalar (dois `U32`),
+para que só os raios em regiões sujas toquem a árvore.
 
 ### Duas armadilhas O(n) no Base
 
