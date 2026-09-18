@@ -1,0 +1,113 @@
+type Empty is Data:
+
+type Unit is Data:
+  Unit{}
+
+type Bool is Data:
+  False{}
+  True{}
+
+type Cmp is Data:
+  LT{}
+  EQ{}
+  GT{}
+
+type Either<a, b, -A: Kind(a), -B: Kind(b)> is Kind(a <&> b):
+  Inl{value: A}
+  Inr{value: B}
+
+type Sigma<a, b, -A: Kind(a), -B: @-x: A -> Kind(b)> is Kind(a <&> b):
+  Tuple{fst: A, snd: B(fst)}
+
+type Nat is Data:
+  Zero{}
+  Succ{pred: Nat}
+
+type Maybe<a, -A: Kind(a)> is Kind(a):
+  None{}
+  Some{value: A}
+
+type Result<a, b, -E: Kind(a), -A: Kind(b)> is Kind(a <&> b):
+  Fail{error: E}
+  Done{value: A}
+
+type List<a, -A: Kind(a)> is Kind(a):
+  Nil{}
+  Con{head: A, tail: List<a, A>}
+
+law Word:
+  for n: Nat
+  Data
+
+type Word.Nil is Data:
+  WNil{}
+
+type Word.Con<-p: Nat> is Data:
+  WCon{head: Bool, tail: Word(p)}
+
+type U32 is Data:
+  U32{data: Word(32n)}
+
+type F32 is Data:
+  F32{data: Word(32n)}
+
+type Char is Data:
+  Chr{code: U32}
+
+type String is Data:
+  SNil{}
+  SCon{head: Char, tail: String}
+
+type Array<-T: Type> is Type:
+  ALeaf{value: T}
+  ANode{xs: Array<T>, ys: Array<T>}
+
+type Image is Data:
+  Pix{color: U32}
+  Qua{tl: Image, tr: Image, bl: Image, br: Image}
+
+type Event is Data:
+  Key{code: U32, down: Bool}
+  Mouse{x: U32, y: U32, button: U32, down: Bool}
+  Move{x: U32, y: U32}
+  Close{}
+
+type Map<a, -V: Kind(a)> is Kind(a):
+  MTip{}
+  MLeaf{key: String, val: V}
+  MNode{pos: Nat, lo: Map<a, V>, hi: Map<a, V>}
+
+law File:
+  Type
+
+law Socket:
+  Type
+
+law Listener:
+  Type
+
+law Window:
+  Type
+
+law Audio:
+  Type
+
+law Chan:
+  for -A: Type
+  Data
+
+type IO.OP<-R: Type> is Type:
+  Emit{value: R}
+  Halt{code: U32, message: String}
+
+law Pair:
+  for -A: Type
+  for -B: Type
+  Type
+
+law IO:
+  for -A: Type
+  Type
+
+type App<-S: Type> is Type:
+  App{view: S -> Pair(S, Image), tick: List<Event> -> S -> IO(Maybe<S>)}
