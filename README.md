@@ -98,43 +98,14 @@ caso ideal — toda lane roda o mesmo número de passos, divergência zero.
 
 ### Benchmark
 
-Cronometrado **por dentro do processo** com `IO.now()`, 10 execuções, checksum
-verificado idêntico nos três backends. 512×512 pixels × 200 iterações:
+Na tomada, LPM desligado, sem throttling, aquecimento descartado, 5 execuções,
+mediana. 512×512 pixels × 200 iterações, checksum idêntico nos três backends:
 
 | | ms/frame | ganho |
 |---|---|---|
-| 1 thread | 428 | — |
-| 10 cores | 47 | 9,1x |
-| **GPU (Metal)** | **20** | **21x** (2,4x sobre os 10 cores) |
-
-Bate com o medido na janela: 58 fps ≈ 17 ms/frame.
-
-### Limite: precisão, e por quê
-
-O zoom animado bate no teto do `F32` depois de ~7 s e a imagem vira bloco. Base
-tem só `U32` e `F32` — não existe `F64`.
-
-Isso **não é feature faltando, é restrição de hardware**. O modelo do Bend é que
-o mesmo C vira programa de CPU e kernel de GPU, então um tipo que a GPU não
-suporta quebraria qualquer chamada com `!`. E a GPU da Apple não suporta: as
-GPUs Apple são FP32/FP16.
-
-Verificado aqui, compilando MSL em tempo de execução num M5
-(`makeLibrary(source:)`):
-
-| tipo em MSL | resultado |
-|---|---|
-| `float` (32) | aceito |
-| `half` (16) | aceito |
-| `long` (int 64) | **aceito** |
-| `double` (64) | **`error: 'double' is not supported in Metal`** |
-
-Repare que inteiro de 64 bits passa — o veto é específico a ponto flutuante de
-64 bits. Um `U64` seria viável no Metal hoje; um `F64` não.
-
-Para zoom profundo o caminho usual em GPU é aritmética *double-float*: representar
-um double como par de floats e fazer as operações à mão. Cabe em `F32`, roda no
-Metal, e é o que renderizadores de fractal em GPU usam.
+| 1 thread | 213 | — |
+| 10 cores | 31 | 6,9x |
+| **GPU (Metal)** | **8** | **26x** (3,9x sobre os 10 cores) |
 
 ### Como medir errado (três vezes seguidas)
 
@@ -231,37 +202,38 @@ até tiles de 8×8 e resolve os 64 pixels do tile em linha reta.
 
 ### O que realmente comprou o ganho
 
-Medido de novo com Low Power Mode desligado, 5 execuções, mediana (os números
-anteriores nesta seção estavam inflados por throttling):
-
-| | GPU ms/frame |
-|---|---|
-| 03: fork por pixel, raio partindo da câmera | 47 |
-| 04: + clip do raio contra a caixa do mundo | 27 |
-
-O ganho é o **clip**: começar o DDA na fronteira da caixa em vez da câmera, e
-devolver céu na hora pra quem nem entra nela.
-
-### A granularidade do fork não mudou nada aqui
-
-Ablação isolada (mesmo código, muda só onde o fork para), 5 execuções:
+Mesmas condições, 512²:
 
 | | GPU | CPU |
 |---|---|---|
-| fork por pixel (9 níveis) | 24 ms | 23 ms |
-| fork por tile 8×8 (6 níveis) | 23 ms | 24 ms |
+| 03: fork por pixel, raio partindo da câmera | 45 ms | — |
+| 04: + clip do raio contra a caixa do mundo | **24 ms** | 23 ms |
+| 04, mas voltando a forkar por pixel | 25 ms | — |
 
-Ranges apertados (23–23 no caso do tile), então não é ruído: **é zero**.
+O ganho é o **clip** (45 → 24). A granularidade do fork rende **1 ms**, ou seja
+nada: 24 contra 25, com ranges de 23–24 e 24–26.
 
 Isso não contradiz o conselho do Taelin — é outra carga. A `bend3d` binariza
-triângulos por tile, então o tile é uma unidade de *trabalho compartilhado*:
-os 256 pixels do tile leem a mesma lista de triângulos. Num raycaster cada
-pixel é independente e não há nada a compartilhar, então o custo de escalonar
-não domina. Mantive o fork por tile porque é o idioma da lib, não porque mediu
-mais rápido.
+triângulos por tile, então o tile é uma unidade de *trabalho compartilhado*: os
+pixels do tile leem a mesma lista de triângulos. Num raycaster cada pixel é
+independente e não há nada a compartilhar. Mantive o fork por tile porque é o
+idioma da lib, não porque mediu mais rápido.
 
-Nota: nesta carga a GPU também não ganha da CPU (27 vs 25 ms). O `!` só rendeu
-de verdade no mandelbrot puro, que não aloca.
+### Aqui a GPU não ganha da CPU, e o motivo
+
+24 ms na GPU contra 23 na CPU. Investigando, não é a alocação da quadtree:
+
+| | GPU | CPU |
+|---|---|---|
+| montando a `Image` | 23 ms | — |
+| só somando as cores, sem `Image` | 17 ms | 17 ms |
+
+Alocar custa 6 dos 23 ms (26%), e **mesmo sem alocar a GPU empata** (17 = 17).
+A diferença com o mandelbrot, que ganha 3,9x, é **divergência**: lá toda lane
+faz exatamente o mesmo trabalho aritmético; aqui cada raio ramifica por um eixo
+diferente e os que veem céu nem entram no DDA. O guia do Bend já avisa disso —
+*"the GPU shines on uniform numeric work like mandelbrot or nbody; divergent
+work like n-queens stays faster on the CPU"*.
 
 ### Duas otimizações que eu tentei e removi
 
@@ -326,13 +298,13 @@ O gargalo é ler a árvore compartilhada. Medido isolando cada camada:
 
 | | ms/frame (512²) |
 |---|---|
-| zero leituras (coluna procedural) | 18 |
-| **uma** leitura por raio | 112 |
+| zero leituras (coluna procedural) | 17 |
+| **uma** leitura por raio | 115 |
 | releitura durante o DDA (correto) | ~5950 |
 
-Uma leitura de árvore compartilhada custa **~358 ns** — cinco níveis de
+Uma leitura de árvore compartilhada custa **~374 ns** — cinco níveis de
 ponteiro com tráfego de refcount. Isso é o teto: mesmo uma leitura por pixel a
-512² já custa 94 ms.
+512² já custa 98 ms.
 
 Por isso a demo renderiza a **128²** (~370 ms/frame): responde ao teclado, mas
 não é fluida. É o preço honesto de um mundo editável e compartilhado em Bend
@@ -355,10 +327,12 @@ conversão direta F32↔U32.
 
 ### Aviso sobre as medições
 
-Os benchmarks desta seção foram feitos na bateria. Rodando o mesmo binário em
-momentos diferentes, vi variação de até **1,7x** (25 ms a 43 ms). Efeitos
-grandes (6x, 38x) sobrevivem a isso; **efeitos pequenos não**. Os números das seções acima
-foram refeitos com LPM desligado e 5 execuções.
+Os primeiros benchmarks desta sessão foram feitos na bateria e em Low Power
+Mode, e estavam inflados: rodando o mesmo binário em momentos diferentes vi
+variação de até **1,7x**. Todos os números do README foram refeitos na tomada,
+com LPM desligado, aquecimento descartado e 5 execuções. A lição fica: efeitos
+grandes (6x, 38x) sobrevivem ao ruído, efeitos pequenos não — e eu publiquei
+uma atribuição de ~4% que era zero antes de perceber.
 
 ## Publicado no BendHub
 
