@@ -219,21 +219,35 @@ pixels do tile leem a mesma lista de triângulos. Num raycaster cada pixel é
 independente e não há nada a compartilhar. Mantive o fork por tile porque é o
 idioma da lib, não porque mediu mais rápido.
 
-### Aqui a GPU não ganha da CPU, e o motivo
+### Aqui a GPU não ganha da CPU, e eu não sei por quê
 
-24 ms na GPU contra 23 na CPU. Investigando, não é a alocação da quadtree:
+No mandelbrot a GPU ganha 5x dos 10 núcleos. Neste raycaster, empata — e eu
+testei quatro explicações, todas refutadas:
 
-| | GPU | CPU |
+| hipótese | teste | resultado |
 |---|---|---|
-| montando a `Image` | 23 ms | — |
-| só somando as cores, sem `Image` | 17 ms | 17 ms |
+| alocar a `Image` serializa | somar as cores em vez de montar a árvore | 17 GPU / 17 CPU — **não é** |
+| divergência entre raios | tirar o clip, todo raio faz 96 passos iguais | 48 GPU / 45 CPU — **não é** |
+| pressão de registradores | mandelbrot com 14 valores vivos em vez de 6 | 7 GPU / 33 CPU, segue ganhando 5x — **não é** |
+| `F32.sin`/`cos` no laço | terreno plano, zero trigonometria | 8 GPU / 8 CPU — **não é** |
+| carga pequena demais pro dispatch | escalar para 1024² e 2048² | 15/13 e 29/25 — **não é** |
 
-Alocar custa 6 dos 23 ms (26%), e **mesmo sem alocar a GPU empata** (17 = 17).
-A diferença com o mandelbrot, que ganha 3,9x, é **divergência**: lá toda lane
-faz exatamente o mesmo trabalho aritmético; aqui cada raio ramifica por um eixo
-diferente e os que veem céu nem entram no DDA. O guia do Bend já avisa disso —
-*"the GPU shines on uniform numeric work like mandelbrot or nbody; divergent
-work like n-queens stays faster on the CPU"*.
+Trigonometria custa metade do frame (18 → 8 ms ao remover), mas custa igual nos
+dois backends. E o empate persiste em toda escala testada.
+
+Então: `!` rende 5x numa carga e 0x na outra, e a diferença estrutural entre as
+duas eu não consegui isolar. Fica como resultado negativo reproduzível — cinco
+explicações eliminadas é mais útil pra quem for investigar que um palpite.
+
+### Aquecimento da GPU: cuidado ao medir
+
+O mesmo mandelbrot dá **6 ms** medido como média de 10 execuções dentro de um
+processo, e **50 ms** medido uma vez só por processo. A GPU tem aquecimento
+significativo por processo (além dos ~150 ms de inicialização do Metal).
+
+Para um loop de render o número quente é o certo. Para um cálculo de uma vez,
+o frio. Medir uma vez e chamar de "custo por frame" infla o resultado ~8x — e
+foi como eu concluí, errado, que a GPU perdia do mandelbrot.
 
 ### Duas otimizações que eu tentei e removi
 
