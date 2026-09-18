@@ -104,5 +104,9 @@ instalada congela. Para atualizar depois, rode o install.sh de novo.
 
 - `docs/GUIDE.md` — saída de `bend guide`
 - `docs/BASE-TYPES.txt` — saída de `bend base --types`
+
+Esses dois são output literal do compilador, não obra original deste repo —
+Bend é Apache-2.0, © Bend authors. Ver `docs/ATTRIBUTION.md`.
+
 - [GUIDE.md upstream](https://github.com/bendlang/bend/blob/main/guide/GUIDE.md)
 - Papers: [BendTT](https://github.com/bendlang/bend/blob/main/paper/BendTT.pdf) (teoria de tipos), [BendRT](https://github.com/bendlang/bend/blob/main/paper/BendRT.pdf) (runtime)
