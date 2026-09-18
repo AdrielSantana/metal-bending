@@ -109,14 +109,32 @@ verificado idêntico nos três backends. 512×512 pixels × 200 iterações:
 
 Bate com o medido na janela: 58 fps ≈ 17 ms/frame.
 
-### Limite: precisão
+### Limite: precisão, e por quê
 
 O zoom animado bate no teto do `F32` depois de ~7 s e a imagem vira bloco. Base
-tem só `U32` e `F32` — **não existe `F64` nem `U64`**. Existe um `Word(n)`
-genérico (`type F32 is Data: F32{data: Word(32n)}`), então dá pra construir
-precisão maior, mas não vem pronto. Zoom profundo de verdade precisa disso, ou
-de aritmética de duplo-float montada à mão.
+tem só `U32` e `F32` — não existe `F64`.
 
+Isso **não é feature faltando, é restrição de hardware**. O modelo do Bend é que
+o mesmo C vira programa de CPU e kernel de GPU, então um tipo que a GPU não
+suporta quebraria qualquer chamada com `!`. E a GPU da Apple não suporta: as
+GPUs Apple são FP32/FP16.
+
+Verificado aqui, compilando MSL em tempo de execução num M5
+(`makeLibrary(source:)`):
+
+| tipo em MSL | resultado |
+|---|---|
+| `float` (32) | aceito |
+| `half` (16) | aceito |
+| `long` (int 64) | **aceito** |
+| `double` (64) | **`error: 'double' is not supported in Metal`** |
+
+Repare que inteiro de 64 bits passa — o veto é específico a ponto flutuante de
+64 bits. Um `U64` seria viável no Metal hoje; um `F64` não.
+
+Para zoom profundo o caminho usual em GPU é aritmética *double-float*: representar
+um double como par de floats e fazer as operações à mão. Cabe em `F32`, roda no
+Metal, e é o que renderizadores de fractal em GPU usam.
 
 ### Como medir errado (três vezes seguidas)
 
