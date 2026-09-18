@@ -1,5 +1,7 @@
 # Bend 2.0.5 on Apple M5 — six findings
 
+*(Versão em português: [RELATORIO.md](RELATORIO.md))*
+
 Notes from building three renderers in Bend over a couple of days: a Mandelbrot,
 a voxel raycaster, and an interactive voxel world with break/place. Everything
 here is reproducible from <https://github.com/AdrielSantana/metal-bending>.
