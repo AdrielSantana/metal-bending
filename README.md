@@ -70,6 +70,28 @@ Sem táticas: proposição é tipo, prova é `def` desse tipo. `{==}` fecha por
 reflexividade, `%e : P` reescreve, e a chamada recursiva **é** a hipótese de
 indução.
 
+## Publicado no BendHub
+
+O conjunto provado está no [BendHub](https://hub.bend-lang.com), importável por
+content hash:
+
+```python
+import 0x983079cc7642e53dbc9aaf7fa2636b20/PROOF.bend as PROOF
+```
+
+Isso traz `PROOF.bend`, `LAWS.bend` e `src/math.bend` juntos (3 arquivos,
+1666 bytes). A primeira execução baixa pra `~/.bend/lib` e confere contra o
+hash; as seguintes leem de lá, offline.
+
+Sobre o hub: **sem conta e sem versão**. No lugar do cadastro, o comando minera
+um proof-of-work — aqui deu 23 s de relógio e 137 s de CPU em 6 cores. Pacote é
+imutável e endereçado pelo conteúdo: qualquer alteração vira outro hash, e não
+existe despublicar. Arquivo com `?TODO` ou lei em aberto é recusado na entrada.
+
+```sh
+bend PROOF.bend --publish
+```
+
 ## Benchmark medido aqui (`pow2`, M5)
 
 | carga | 1 thread | 10 cores | GPU (Metal) |
