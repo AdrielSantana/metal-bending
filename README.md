@@ -4,6 +4,10 @@ Playground do [Bend 2](https://bend-lang.com) — linguagem com sintaxe Python,
 semântica Haskell/Lean, afinidade tipo Rust, provas formais e paralelismo
 CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
+> **Estado (18/09/2026):** os renderizadores funcionam e estão medidos. O
+> mundo editável parou num limite da linguagem, não do código — veja
+> [Onde isto para](#onde-isto-para) antes de tentar otimizar mais.
+
 ## Setup
 
 Bend **2.0.9** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
@@ -405,6 +409,69 @@ variação de até **1,7x**. Todos os números do README foram refeitos na tomad
 com LPM desligado, aquecimento descartado e 5 execuções. A lição fica: efeitos
 grandes (6x, 38x) sobrevivem ao ruído, efeitos pequenos não — e eu publiquei
 uma atribuição de ~4% que era zero antes de perceber.
+
+## Onde isto para
+
+Esta é a limitação que encerrou o trabalho, anotada para quem vier depois —
+inclusive eu.
+
+**A expectativa.** Um mundo voxel editável deveria custar o mesmo que o
+procedural. Em qualquer engine convencional custa: o mundo vive num buffer
+plano, ler uma coluna é um acesso O(1) à memória, editar é escrever nele. O
+`gfx/04` (procedural, imutável) renderiza 512² em 9 ms. O Bendcraft deveria
+chegar perto.
+
+**O que acontece.** O Bendcraft renderiza 256² a **7 ms enquanto o mundo está
+intocado e ~32 ms depois que o jogador constrói** — medido em jogo real, com o
+`tick` instrumentado: a primeira edição dobra o frame, as seguintes sobem até
+um platô, e o custo fica mesmo depois que se para de editar.
+
+**Por quê.** Em Bend, `Array` é `Type` (dono único) e não pode ser lido pelos
+dois lados de uma chamada paralela, então o mundo compartilhado tem que ser
+uma estrutura `Data` — uma árvore. E um valor boxed compartilhado por todos os
+pixels custa um atômico por uso; nas palavras do autor, no `bend3d.bend`:
+*"a boxed record shared by every vertex is an atomic count per use"*. Todo
+raio toca os nós do topo da árvore a cada travessia de coluna, e os nós do
+topo são os mesmos para os 65 mil raios. Não é bug do demo nem do compilador:
+é o modelo de custo da linguagem hoje, e o próprio autor diz que isso
+"precisa estar no guia".
+
+**O que foi tentado, tudo com checksum idêntico provando a mesma imagem:**
+
+| tentativa | 512² | resultado |
+|---|---|---|
+| todas as colunas na árvore, leitura recursiva | 220 ms | ponto de partida |
+| `Bool.pick` no lugar de um `match` de 4 vias | 183 | 1,2x |
+| empacotar 2×2 colunas por folha | 220 | nada |
+| tirar a base da câmera do laço por pixel | 184 | nada |
+| cachear o nó da região no raio | 192 | nada |
+| desenrolar o walk recursivo | 184 | nada |
+| cache **e** desenrolar juntos | 155 | 1,2x — só pagam juntos |
+| **só as edições na árvore, terreno procedural** | **26** | 6x — mas só sem edições |
+| o mesmo, com 16 edições espalhadas | ~35 (256²) | o custo volta inteiro |
+
+A última linha é o limite. O overlay de edições provou onde o custo mora
+(tocar os nós compartilhados do topo por travessia) e, ao mesmo tempo, que
+qualquer edição transforma a raiz num `WNode` e devolve esse custo a todo raio.
+
+**O que ainda não foi tentado.** Um bitmask de "região editada" — 64 regiões
+de 4×4 colunas em dois `U32` — carregado como **escalar** pelo fork, como a
+base da câmera. Raio em região limpa nunca toca a árvore; só as sujas pagam.
+Previsão: ~9 ms nas regiões limpas, ~30 nas sujas, o que para construção
+normal (agrupada num canto) deve ficar perto do intocado. É previsão, não
+medida — e previsões hoje erraram mais de uma vez. Depois disso, o caminho é
+o do `bend3d`: binarizar o mundo por tile de tela antes do render paralelo,
+o que troca o DDA por percorrer uma lista. Reescrita.
+
+**O que resolveria de verdade.** Uma leitura "emprestada" de um `+Data`
+dentro de um `!` — usar sem contar — deixaria o compilador elidir os atômicos
+quando a árvore só é lida e nunca solta dentro do fork. Não sei se cabe no
+modelo do runtime; é a capacidade exata que dissolveria o problema, e é uma
+pergunta para o autor, não uma espera.
+
+Para o que este repo se propôs — mostrar Bend renderizando no Metal e um
+mundo editável bit-exato — 7/32 ms em 256² é bom. Para virar jogo, é onde a
+próxima pessoa começa.
 
 ## Publicado no BendHub
 
