@@ -309,14 +309,17 @@ bend gfx/05_craft.bend -o build/craft
 
 `W A S D` move · setas olham · `I`/`K` sobe e desce · `J` quebra · `L` coloca · `Esc` sai
 
-### O mundo é uma árvore, não um array
+### O mundo é uma função mais uma árvore de edições
 
 `Array` em Bend é `Type`: dono único, então **não pode ser lido pelos dois
 lados de uma chamada paralela** — inútil num renderizador onde todo pixel lê o
-mundo ao mesmo tempo. Então o mundo é uma quadtree `Data` sobre as 32×32
-colunas, e cada folha é **um U32 cujo bit `y` diz "tem bloco na altura y"**.
-Marcada `+`, é compartilhada por todos os pixels; editar reconstrói um caminho
-de cinco nós e o resto continua compartilhado.
+mundo ao mesmo tempo. A primeira versão guardava as 32×32 colunas numa
+quadtree `Data` compartilhada, e ler essa árvore era 85% do frame.
+
+A versão atual guarda **só as edições**. O terreno é uma função pura de
+`(x, z)`; a árvore começa como um único `WNone` e cada edição do jogador cria
+um caminho de cinco nós. Um raio que encontra `WNone` calcula a coluna na hora.
+Cada folha é **um U32 cujo bit `y` diz "tem bloco na altura y"**.
 
 32 alturas em uma palavra é o que torna isso viável: uma coluna é uma palavra
 de máquina, e quebrar/colocar é um bit.
@@ -329,32 +332,33 @@ blocos, J (quebrar)   : 102281872   (-256 = exatamente um bit da altura 8)
 blocos, L (colocar)   : 102282384   (+256)
 ```
 
-### O custo, particionado
+### O custo, particionado — e resolvido
 
-> **Corrigido em 18/09/2026.** Os números antigos (374 ns por leitura, ~5950 ms
-> de releitura, "a demo roda a 128² em ~370 ms e não é fluida") foram todos
-> medidos na granularidade de fork errada. Seguem os medidos no ótimo.
+A árvore compartilhada era o gargalo. 512², checksum idêntico em todas as
+linhas, Bend 2.0.9, mediana de 5:
 
-O gargalo continua sendo ler a árvore compartilhada. 512², 10 frames por
-execução, mediana de 3:
-
-| o que o DDA faz ao cruzar de coluna | ms/frame |
+| o mundo | ms/frame |
 |---|---|
-| nada — uma leitura no início do raio, depois reaproveita | 19 (18–19) |
-| recalcula a coluna proceduralmente | 24 (22–34) |
-| **lê da árvore compartilhada** | **176 (176–179)** |
-| lê da árvore a *cada* passo do DDA | 241 (226–253) |
+| coluna procedural (teto: sem árvore nenhuma) | 23 |
+| todas as colunas na árvore, leitura recursiva da raiz | 189 |
+| + `Bool.pick` no lugar do `sel4` | 183 |
+| + nó da região cacheado no raio **e** walk desenrolado | 155 |
+| **só as edições na árvore, terreno procedural** | **26** |
 
-As linhas 2 e 3 são o isolamento que importa: mesma estrutura, mesmo número de
-consultas, só muda o mecanismo. Passar pela árvore custa **152 ms**.
+Quatro coisas que não ajudaram, todas com checksum idêntico, registradas para
+ninguém repetir: empacotar 2×2 colunas por folha (1.00x), tirar a base da
+câmera do laço por pixel (1.00x), cachear o nó da região sozinho (1.00x),
+desenrolar o walk sozinho (1.00x). As duas últimas só funcionam **juntas**
+(1.2x) — dois gargalos em série, remove um e o outro domina.
 
-Não dou mais um número de ns por leitura: eu nunca contei as trocas de coluna
-por raio, então não teria como derivar um honestamente. O que dá pra afirmar é
-a razão — a árvore compartilhada custa ~7x o frame inteiro.
+O que resolveu foi a regra do Taelin: uma árvore com refcount compartilhada por
+todos os pixels custa um atômico por uso, então toque nela o mínimo possível.
+Com o overlay, quase todo raio toca um nó (`WNone`) e calcula o resto.
 
-E a conclusão antiga caiu: o Bendcraft a 128² roda a **28 ms/frame**, uns 36
-fps. É fluido. Leitura de árvore é o alvo a atacar, mas não impede um mundo
-voxel jogável em Bend hoje.
+Na resolução do demo, 128²: **234 → 6 ms** ao longo da sessão. A edição segue
+bit-exata: checksum do mundo vazio `102282128` (idêntico ao da árvore antiga),
+quebrar/colocar dá exatamente ±2^y nos três caminhos do `wmod` novo, e o leitor
+recursivo do picking concorda com o desenrolado do render.
 
 ### Duas armadilhas O(n) no Base
 

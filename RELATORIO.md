@@ -113,6 +113,19 @@ foram medidos na granularidade de fork faminta do achado 4:
 Leitura de árvore continua sendo o alvo a atacar, mas não é o que separa o Bend
 de um mundo voxel jogável.
 
+**Resolvido, mais tarde no mesmo dia.** Depois da sua indicação do
+`bend3d.bend` — *"a boxed record shared by every vertex is an atomic count per
+use"* — parei de otimizar a leitura e a removi: o mundo agora é a função do
+terreno mais uma árvore só com as edições do jogador (um construtor `WNone`
+para "nada aqui embaixo"). Quase todo raio toca um nó e calcula a coluna.
+512², mesma imagem, checksum verificado: 155 → **26 ms**, contra 23 do terreno
+sozinho. Nos 128² do demo: 22 → 6. As edições continuam bit-exatas. Quatro
+coisas que *não* ajudaram no caminho, cada uma 1.00x com checksum idêntico:
+empacotar quatro colunas por folha, tirar a base da câmera do laço por pixel,
+cachear o nó da região do raio, e desenrolar o walk recursivo — as duas últimas
+só pagam juntas (1.2x), o que parece dois custos em série. Detalhes no README e
+no histórico de commits do repo.
+
 **Repro:** `gfx/05_craft.bend`; as camadas são três variantes de uma linha do
 `refetch`.
 

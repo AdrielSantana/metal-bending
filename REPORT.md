@@ -111,6 +111,19 @@ were measured at the starved fork granularity of finding 4:
 Tree reads are still the thing to attack, but they do not stand between Bend and
 a playable voxel world.
 
+**Resolved, later the same day.** After your pointer to `bend3d.bend` — *"a
+boxed record shared by every vertex is an atomic count per use"* — I stopped
+optimising the read and removed it instead: the world is now the terrain
+function plus a tree holding only the player's edits (a `WNone` constructor
+for "nothing below here"). Almost every ray touches one node and computes the
+column. 512², same image, checksum-verified: 155 → **26 ms**, against 23 for
+the terrain alone. At the demo's 128²: 22 → 6. Edits stay bit-exact. Four
+things that did *not* help along the way, each 1.00x with an identical
+checksum: packing four columns per leaf, hoisting the camera basis out of the
+per-pixel loop, caching the ray's region node, and unrolling the recursive
+walk — the last two only pay together (1.2x), which reads like two costs in
+series. Details in the repo's README and commit history.
+
 **Repro:** `gfx/05_craft.bend`; the layers are three one-line variants of
 `refetch`.
 
