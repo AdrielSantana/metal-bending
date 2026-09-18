@@ -25,6 +25,10 @@ AC power, Low Power Mode off, no thermal warning recorded. Every timing is
 warm-up, 5 runs, median reported with the min–max range. Earlier numbers I had
 were taken on battery and were inflated up to 1.7x; those are not in here.
 
+**Re-verified on 2.0.9.** Findings 4 and 5 were re-measured on 2.0.9 and
+reproduce; findings 1 and 3 still hold there as well. The tables below were
+taken on 2.0.6 unless a row says otherwise.
+
 ---
 
 ## 1. `f!(x)` and `f(x)` do not compute the same thing

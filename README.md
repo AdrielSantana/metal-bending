@@ -6,7 +6,7 @@ CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
 ## Setup
 
-Bend **2.0.6** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
+Bend **2.0.9** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
 (o instalador escreveu em `~/.zshrc`). Precisa de um shell novo, ou:
 
 ```sh
@@ -427,10 +427,22 @@ Note o custo de CPU da run em GPU: 0,01 s de user time.
 
 ## Telemetria e auto-update
 
-Por padrão o launcher faz um POST em `bend-lang.com/ping` a cada execução
-(`{id, ver, os, arch, cmd, exit, ms}`) e é isso que dispara o auto-update.
-`BEND_NO_TELEMETRY=1` desliga o ping — **e junto o auto-update**: a versão
-instalada congela. Para atualizar depois, rode o install.sh de novo.
+> **Mudou na 2.0.8/2.0.9.** O que está descrito abaixo valia até a 2.0.7.
+
+**Como é hoje.** O `bend --help` lista `bend update` — "install the latest bend
+(curl | sh, shown first)" —, ou seja, atualizar virou ação explícita. O
+instalador afirma que o binário pergunta a versão mais nova para o
+`bend-lang.com` **uma vez por dia**, mandando só versão, SO e tipo de CPU, e que
+`BEND_NO_TELEMETRY=1` desliga isso. Essa parte é declaração do instalador, não
+medição minha; o `bend update` eu confirmei no `--help`.
+
+**Como era até a 2.0.7.** O launcher fazia POST em `bend-lang.com/ping` a cada
+execução (`{id, ver, os, arch, cmd, exit, ms}`) e era isso que disparava o
+auto-update. `BEND_NO_TELEMETRY=1` desligava o ping **e junto o auto-update**,
+congelando a versão.
+
+Vi a transição acontecer: a instalação aqui ficou presa na 2.0.7 imprimindo
+"Bend's installer changed" enquanto a 2.0.9 já estava publicada.
 
 ## Docs
 

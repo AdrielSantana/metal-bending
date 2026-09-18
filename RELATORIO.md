@@ -27,6 +27,10 @@ execução descartada como warm-up, 5 execuções, reportando mediana com o rang
 min–max. Os números que eu tinha antes foram medidos na bateria e estavam
 inflados em até 1,7x; esses não estão aqui.
 
+**Reconferido na 2.0.9.** Os achados 4 e 5 foram remedidos na 2.0.9 e
+reproduzem; os achados 1 e 3 continuam valendo lá também. As tabelas abaixo
+são da 2.0.6, salvo onde a linha disser outra coisa.
+
 ---
 
 ## 1. `f!(x)` e `f(x)` não computam a mesma coisa
