@@ -109,6 +109,15 @@ verificado idêntico nos três backends. 512×512 pixels × 200 iterações:
 
 Bate com o medido na janela: 58 fps ≈ 17 ms/frame.
 
+### Limite: precisão
+
+O zoom animado bate no teto do `F32` depois de ~7 s e a imagem vira bloco. Base
+tem só `U32` e `F32` — **não existe `F64` nem `U64`**. Existe um `Word(n)`
+genérico (`type F32 is Data: F32{data: Word(32n)}`), então dá pra construir
+precisão maior, mas não vem pronto. Zoom profundo de verdade precisa disso, ou
+de aritmética de duplo-float montada à mão.
+
+
 ### Como medir errado (três vezes seguidas)
 
 Vale registrar, porque cada um desses produziu um número convincente e falso:
