@@ -101,6 +101,12 @@ started writing a Taylor series by hand. Later I concluded there was no direct
 F32↔U32 conversion and used the `Nat` round-trip, which is O(value), in an
 inner loop.
 
+**Honest caveat:** when I later swapped the round-trips for the primitives, it
+measured **no speedup** (within noise, both programs). So this is a
+discoverability complaint, not a performance one — the O(value) code may well
+be optimised away. What it cost me was time and a wrong hypothesis, not
+milliseconds.
+
 This one seems worth flagging given your note that AIs write slow Bend: in this
 case it was not an OpenGL mindset, it was that the fast path is invisible to
 the obvious search and the slow path has the obvious name. A docs line, or

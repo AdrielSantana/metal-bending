@@ -20,14 +20,19 @@ import Base
 def rgb(r: U32, g: U32, b: U32) -> U32:
   (r * 65536 + g * 256 + b : U32)
 
+# `F32.to_u32` / `U32.to_f32` are primitives (declared as `law`, not `def`).
+# The `def` pair in Base -- U32.from_nat / F32.to_nat -- is O(value): it
+# counts up one U32.inc at a time. Easy to miss -- though swapping these in
+# measured NO speedup in this program, so the reason to prefer them is the
+# complexity on paper, not a win I observed.
 def floorf(+x: F32) -> F32:
-  F32.from_nat(F32.to_nat(x))
+  U32.to_f32(F32.to_u32(x))
 
 def absf(+x: F32) -> F32:
   F32.max(x, (0.0 - x : F32))
 
 def p2f(+p: U32) -> F32:
-  (F32.from_nat(U32.to_nat(p)) * 0.00390625 - 1.0 : F32)
+  (U32.to_f32(p) * 0.00390625 - 1.0 : F32)
 
 # ---------- the world ----------
 
@@ -51,7 +56,7 @@ def voxel_color(+vy: F32, +vx: F32, +vz: F32) -> U32:
   Bool.pick(U32, (vy > h - 4.0 : F32), rgb(134, 96, 67), rgb(130, 130, 130)))
 
 def scale(+c: U32, +k: F32) -> U32:
-  U32.from_nat(F32.to_nat((F32.from_nat(U32.to_nat(c)) * k : F32)))
+  F32.to_u32((U32.to_f32(c) * k : F32))
 
 def dim(+c: U32, +k: F32) -> U32:
   +r = (c / 65536 : U32)

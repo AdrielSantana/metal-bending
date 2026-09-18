@@ -101,6 +101,12 @@ trigonometria e comecei a escrever uma série de Taylor na mão. Depois concluí
 que não havia conversão direta F32↔U32 e usei o caminho via `Nat`, que é
 O(valor), dentro de um laço interno.
 
+**Ressalva honesta:** quando depois troquei os caminhos via `Nat` pelas
+primitivas, **não mediu ganho nenhum** (dentro do ruído, nos dois programas).
+Então isso aqui é reclamação de descoberta, não de performance — o código
+O(valor) pode muito bem estar sendo otimizado. O que me custou foi tempo e uma
+hipótese errada, não milissegundos.
+
 Esse aqui me parece o mais relevante dado o teu comentário sobre IAs
 escreverem Bend lento: no meu caso não foi mentalidade de OpenGL, foi que o
 caminho rápido é invisível à busca óbvia e o caminho lento tem o nome óbvio.
