@@ -1,6 +1,15 @@
-# Bend 2.0.5 on Apple M5 — six findings
+# Bend 2.0.6 on Apple M5 — six findings
 
 *(Versão em português: [RELATORIO.md](RELATORIO.md))*
+
+> **Correction, 18 Sep 2026.** Findings 2, 4 and 5 below are rewritten. The
+> earlier pair claimed `!` gave nothing on a raycaster and called the cause
+> unexplained; the cause was fork granularity, and my ablations had all been run
+> at the one depth where the GPU cannot win — which also inflated finding 2's
+> numbers by up to 25x. Re-verified on 2.0.6, with a
+> checksum control proving each variant renders the same image. Everything else
+> reproduced unchanged.
+
 
 Notes from building three renderers in Bend over a couple of days: a Mandelbrot,
 a voxel raycaster, and an interactive voxel world with break/place. Everything
@@ -9,7 +18,7 @@ here is reproducible from <https://github.com/AdrielSantana/metal-bending>.
 Thanks for pointing me at `demos/app_slash_boss_3d/bend3d.bend` — reading it is
 what produced findings 5 and 6.
 
-**Method.** Bend 2.0.5, macOS 26.6.2, Apple M5 (10 CPU cores / 8 GPU cores).
+**Method.** Bend 2.0.6, macOS 26.6.2, Apple M5 (10 CPU cores / 8 GPU cores).
 AC power, Low Power Mode off, no thermal warning recorded. Every timing is
 `IO.now()` around the computation *inside* the process, first run discarded as
 warm-up, 5 runs, median reported with the min–max range. Earlier numbers I had
@@ -26,9 +35,16 @@ The same 512² frame, checksummed as the sum of its pixel colours:
 | compiled with `total!(...)` | 4171263204 | 4171263204 | 4171263204 |
 | compiled with `total(...)` | 4169746902 | 4169746902 | 4169746902 |
 
-Each binary is deterministic across all three backends. They differ from *each
-other*. So this is not GPU precision: the `!` binary gives the same answer on a
-single CPU thread.
+Each binary is deterministic across all three columns. They differ from *each
+other*.
+
+I originally read that as proof this is not GPU precision, since the `!` binary
+gives the same answer under `--threads 1`. That inference was wrong: a binary
+containing `!` loads its `.gpu` Metal library and runs on the device whatever
+the flags say (see Smaller notes), so all three columns of the first row are GPU
+runs. An ordinary GPU/CPU numeric difference explains it. It is still worth
+reporting, because the guide presents `!` as choosing *where* a call runs, not
+*what* it returns.
 
 The delta, 1516302, decomposes exactly. As a colour it is `rgb(23, 35, 14)`,
 and the grass colour in that scene is `rgb(117, 176, 73)`; 117·0.20 = 23.4,
@@ -48,7 +64,7 @@ tied to the comparison tie-break rather than to a single operation.
 
 ---
 
-## 2. A read of a shared `Data` tree costs ~374 ns, which blocks voxel worlds
+## 2. A shared `Data` tree read is the dominant cost in a voxel world (REVISED)
 
 `Array` is a `Type`, so it has one owner and cannot be read by both sides of a
 parallel call — unusable for a renderer where every pixel reads the world. So
@@ -57,24 +73,40 @@ each leaf a `U32` whose bit *y* means "block at height y", shared with `+`.
 Editing rebuilds one five-node path; everything else stays shared. Breaking and
 placing are verified bit-exact.
 
-Cost, isolated by layer, at 512²:
+Cost by layer at 512², all at the fork granularity from finding 4, 10 frames per
+run, median of 3:
 
-| | ms/frame |
+| what the DDA does on a column crossing | ms/frame |
 |---|---|
-| zero tree reads (procedural column) | 17 (16–17) |
-| **one** read per ray | 115 (111–116) |
-| re-reading as the DDA crosses columns | ~5950 |
+| nothing — one read at ray start, then reuse | 19 (18–19) |
+| recompute the column procedurally | 24 (22–34) |
+| **read it from the shared tree** | **176 (176–179)** |
+| read from the tree at *every* DDA step, not just crossings | 241 (226–253) |
 
-98 ms for 262144 reads is **374 ns per read** — five levels of pointer chasing
-plus refcount traffic on a shared tree.
+Rows 2 and 3 are the isolation that matters: identical structure, identical
+number of column lookups, only the mechanism differs. Going through the shared
+tree costs **152 ms**, 7.3x the whole frame.
 
-The consequence is that even one read per pixel costs 98 ms at 512², so the
-demo runs at 128² (~360 ms/frame): it responds to the keyboard but is not
-smooth. As far as I can tell this is the thing standing between Bend and a
-chunked voxel world, and it is a runtime question rather than something I can
-fix in the program.
+So the qualitative finding stands, and is cleaner than before: reads of a shared
+`Data` tree dominate everything else in this program.
 
-**Repro:** `gfx/05_craft.bend`; the partition is three sed-level variants of
+**What I withdraw from the earlier version of this finding.** I reported 374 ns
+per read, a 5950 ms layer for re-reading, and the conclusion that this "blocks
+voxel worlds" and left the demo at 128² and ~360 ms/frame, not smooth. All four
+were measured at the starved fork granularity of finding 4:
+
+- the 5950 ms layer is 241 ms, 25x lower;
+- the 374 ns figure came from a 17 → 115 ms step for "one read per ray", and
+  that layer now costs 19 ms in total, so I cannot reproduce the derivation and
+  I am not replacing it with another per-read number — I never counted the
+  actual column crossings per ray, so I could not have derived one honestly;
+- Bendcraft at 128² runs at **28 ms/frame**, about 36 fps, not 360 ms. It is
+  smooth.
+
+Tree reads are still the thing to attack, but they do not stand between Bend and
+a playable voxel world.
+
+**Repro:** `gfx/05_craft.bend`; the layers are three one-line variants of
 `refetch`.
 
 ---
@@ -115,67 +147,104 @@ mistakes.
 
 ---
 
-## 4. `!` gives 5x on one workload and nothing on another; five explanations ruled out
+## 4. `!` pays on both workloads — the "tie" was fork granularity (CORRECTED)
 
-Mandelbrot, 512² × 200 iterations, warm:
+**This replaces the finding 4 I sent earlier.** That version reported a mystery:
+5x on a Mandelbrot, nothing on a raycaster, five explanations ruled out. The
+mystery was my own measurement. All five ablations were run at the one fork
+granularity that starves the GPU, and the answer was sitting in my own finding
+5, which I had read as "no effect" because I only tested it where it has none.
 
-| | ms/frame |
-|---|---|
-| 1 thread | 213 (213–214) |
-| 10 cores | 31 (30–33) |
-| **GPU** | **6 (6–7)** |
+Every row below is verified to render the same image: the harness sums all pixel
+colours and the checksum is identical down each table. That check is what I was
+missing before.
 
-Voxel raycaster, 512²: 10 cores 23 ms, GPU 24 ms. A tie, and slightly negative.
+Raycaster, 512², `gfx/04`'s real quadtree-building path, 40 frames per run,
+median of 5 runs:
 
-I tried to find the difference and failed. Tested and refuted:
+| fork depth | leaf | with `!` | without `!`, 10 threads |
+|---|---|---|---|
+| 6 levels | 8×8 tile — *what I shipped* | 16 (16–20) | 21 (20–22) |
+| 7 levels | 4×4 tile | **9 (9–12)** | — |
+| 8 levels | 2×2 tile | 14 (11–15) | — |
 
-| hypothesis | test | result |
+Same sweep on a variant that sums colours instead of building the `Image`, so
+both backends can be swept cheaply:
+
+| fork depth | with `!` | without `!`, 10 threads |
 |---|---|---|
-| building the `Image` serialises | sum the colours instead of building the tree | 17 GPU / 17 CPU |
-| ray divergence | drop the clip so every ray runs 96 identical steps | 48 GPU / 45 CPU |
-| register pressure | Mandelbrot with 14 live F32 instead of 6 | 7 GPU / 33 CPU — keeps its 5x |
-| `F32.sin`/`cos` in the loop | flat terrain, no trig at all | 8 GPU / 8 CPU |
-| workload too small per dispatch | scale to 1024² and 2048² | 15/13 and 29/25 |
+| 6 levels (8×8) | 14 (14–15) | 19 (19) |
+| 7 levels (4×4) | **6 (6–8)** | 19 (19–20) |
+| 8 levels (2×2) | 8 (8) | 20 (19–20) |
+| 9 levels (pixel) | 7 (7–8) | 21 (20–21) |
 
-Trig turns out to cost half the frame (18 → 8 ms when removed) but costs the
-same on both backends.
+The CPU column is flat — granularity is irrelevant there, which is what my
+finding 5 said. The `!` column moves 2.3x. So `!` is worth 21 → 9 ms on this
+raycaster, and whether it reads as a win or a tie is decided entirely by how
+deep the fork goes.
 
-So: a reproducible case where `!` does not pay, with five causes eliminated. I
-suspect you will see what I am missing immediately.
+Bendcraft, 128², which reads a shared `World` tree per DDA step, 20 frames per
+run, median of 3:
 
-**Repro:** `gfx/04_voxel_fast.bend` for the raycaster; the ablations are small
-variants of it.
+| fork depth | leaf | with `!` |
+|---|---|---|
+| 4 levels | 8×8 tile — *what I shipped* | 234 (232–236) |
+| 5 levels | 4×4 tile | 87 (87) |
+| 6 levels | 2×2 tile | **28 (28–34)** |
+
+Without `!`, 10 threads: 178 (178). So the version I shipped was **slower on the
+GPU than on the CPU**, and 8.4x slower than the same program forked two levels
+deeper. That is the most useful number in this document.
+
+The optimum is not universal — the raycaster wants 4×4 leaves, Bendcraft wants
+2×2 — so it has to be swept per program.
+
+**Where granularity is not enough.** `gfx/03`, the version without the ray/box
+clip, already forks per pixel and still does not win: 48 (47–65) with `!` against
+43 (42–46) on 10 threads without it. So the clip and the granularity are both
+required — my earlier "drop the clip" ablation, which measured 48/45, was one of
+the few that used a correct baseline, and it was telling me something real. The
+claim here is only that granularity was the missing variable in `gfx/04` and
+`gfx/05`, not that it explains every case.
+
+
+The Mandelbrot table from the earlier report still stands: 214 (1 thread) / 31
+(10 threads) / 7 with `!`. It was already forking to individual pixels, which is
+why it showed its full speedup immediately and made the raycaster look broken by
+comparison.
+
+**Repro:** `gfx/04_voxel_fast.bend` and `gfx/05_craft.bend` now ship at their
+measured optimum. Change the `fork!` depth and the leaf function together —
+depth *k* with an *n*×*n* leaf must satisfy n·2^k = resolution — and check the
+checksum does not move.
 
 ---
 
-## 5. Tile-granularity forking made no measurable difference in a raycaster
+## 5. Fork granularity is free on the CPU and decisive on the GPU
 
 From `bend3d.bend`:
 
 > `Cell.fork`: *"a fork per pixel drowns in scheduling, a fork per cell leaves
 > lanes idle"*
 
-My first version forked at all 9 quadtree levels — a fork per pixel, exactly
-what that comment warns about. I rewrote it to fork down to 8×8 tiles and
-resolve each tile's 64 pixels straight-line. Isolated ablation, same code,
-only the fork depth changing:
+That comment is right and I misapplied it. I forked to 8×8 tiles because it is
+the library's idiom, measured no difference, and concluded granularity did not
+matter for a raycaster. What I had actually shown is that it does not matter *on
+the CPU*, where the sweep is 19 / 19 / 20 / 21 ms and genuinely flat.
 
-| | GPU | CPU |
-|---|---|---|
-| fork per pixel (9 levels) | 25 (24–26) | 23 (23–26) |
-| fork per tile 8×8 (6 levels) | 24 (23–24) | 24 (23–25) |
+On the GPU the same sweep is 14 / 6 / 8 / 7 ms. So the finding is not
+"granularity is irrelevant in a raycaster", it is "granularity is invisible on
+the CPU and worth up to 8x on the GPU" — which is a much better thing to put in
+front of someone arriving with an OpenGL mindset. The instinct to batch work per
+tile is exactly wrong here, and a CPU run will not tell you.
 
-With those ranges this is not noise, it is zero.
+My earlier table for this finding reported 24 vs 25 ms for tile vs per-pixel on
+the GPU. I no longer trust it: it never verified that both variants rendered the
+same pixels, and today's sweep, which does verify that by checksum, contradicts
+it.
 
-I read this as workload-specific rather than as a correction. `bend3d` bins
-triangles per tile, so a tile is a unit of *shared work* — its 256 pixels read
-the same triangle list. In a raycaster every pixel is independent and there is
-nothing to share, so scheduling never dominates. I kept the tile fork because
-it is the library's idiom, not because it measured faster.
-
-What actually made the raycaster 1.9x faster was clipping each ray against the
-world's bounding box first — 45 → 24 ms — so a ray that looks at the sky walks
-zero voxels instead of 96.
+What helped independently, and still does: clipping each ray against the world's
+bounding box first, 45 → 24 ms.
 
 ---
 
@@ -200,6 +269,16 @@ Might be worth a line in the guide next to the `--gpu` flag.
 ---
 
 ## Smaller notes
+
+- **`--gpu` does not enable the GPU; it sizes its heap.** A binary containing
+  `!` loads its `.gpu` Metal library and runs on the device with or without the
+  flag — I verified this by hiding the `.gpu` file, which makes the binary
+  recompile it in *both* cases. The guide reads
+  `./file --gpu 4GB  # enables the GPU, with max 4GB memory`, and I took
+  "enables" literally, so I spent a while treating no-flag runs as a CPU
+  baseline. Any A/B built that way is GPU against GPU and will show a tie. The
+  real CPU baseline is removing the `!`. Wording like "sets the GPU heap size"
+  would have saved me most of a day.
 
 - **Metal has no FP64.** Confirmed on device by compiling MSL at runtime:
   `float`, `half` and `long` are accepted, `double` gives
@@ -231,6 +310,19 @@ Included because the mistakes are informative about the tooling:
   PNGs had the same MD5, which is also what you get from capturing the same
   window twice. I only trusted the comparison after validating the differ
   against a control that correctly reported 22.6%.
+- I benchmarked a "GPU vs CPU" A/B for a whole day where both sides ran on the
+  GPU, because I read `--gpu` as the switch that turns the device on. Every tie
+  in the first version of finding 4 came from that.
+- I shipped two demos at a fork granularity that made the GPU slower than the
+  CPU, then wrote a report calling that a mystery in the compiler. The variable
+  I needed was one I had already measured and dismissed, in the very next
+  finding.
+- I wrote "it cost us 60x here" in a code comment about the O(value)
+  conversions, published it, and only later measured that replacing them changes
+  nothing.
 
 The general lesson, which cost me the most time: a control that runs faster is
-usually doing less work because it is broken.
+usually doing less work because it is broken. The second lesson, newer: make the
+program print a checksum of what it rendered, and compare variants on it before
+you compare them on time. Every wrong conclusion in the first version of this
+document would have been caught by that one line.

@@ -241,16 +241,16 @@ def t16(+x: U32, +y: U32, +a: F32) -> Image:
 def fork(+k: Nat, +x: U32, +y: U32, +a: F32) -> Image:
   match k:
     case 0n:
-      t8(x, y, a)
+      t4(x, y, a)
     case 1n+e:
-      +h = U32.shln(8, e)
+      +h = U32.shln(4, e)
       +x1 = (x + h : U32)
       +y1 = (y + h : U32)
       p q r s = fork(e, x, y, a) fork(e, x1, y, a) fork(e, x, y1, a) fork(e, x1, y1, a)
       Qua{p, q, r, s}
 
 def view(+a: F32) -> Image:
-  fork!(6n, 0, 0, a)
+  fork!(7n, 0, 0, a)
 
 def tick(events: List<Event>, a: F32) -> IO(Maybe<F32>):
   match events:
