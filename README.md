@@ -153,6 +153,66 @@ Vale registrar, porque cada um desses produziu um número convincente e falso:
 O jeito certo: `IO.now()` em volta só da computação, repetida N vezes, com a
 entrada variando a cada volta pra nada ser compartilhado.
 
+## Raycaster de voxel
+
+`gfx/03_voxel.bend` — terreno de voxels renderizado na GPU, câmera orbitando.
+
+```sh
+bend gfx/03_voxel.bend -o build/voxel
+./build/voxel --gpu 2GB
+```
+
+Sem triângulo, sem z-buffer, sem malha. Cada pixel é um raio, o raio atravessa
+a grade com **DDA** (Amanatides & Woo), e a face por onde ele entra no voxel é o
+eixo cujo limite veio primeiro — normal exata, sem adivinhar por coordenada
+fracionária.
+
+**O mundo é uma função pura da posição.** Isso não é preguiça, é obrigatório:
+`Array` no Bend é `Type`, tem dono único, e **não pode ser lido pelos dois lados
+de uma chamada paralela** (testado: `consumed more than once`). Um mundo
+procedural contorna isso e fica perfeitamente paralelo. Um mundo com chunks
+precisaria de árvore `+Data` imutável — compartilhável, mas com busca O(log n)
+em vez de O(1).
+
+Sem early return também significa que o DDA sempre queima os 110 passos, mesmo
+tendo achado o bloco no passo 3.
+
+### Desempenho
+
+512×512 raios, cronometrado por dentro com `IO.now()`:
+
+| | ms/frame | ganho |
+|---|---|---|
+| 1 thread | 432 | — |
+| 10 cores | 85 | 5,1x |
+| **GPU (Metal)** | **28** | **15x** |
+
+Na janela os três dão 58 fps — teto do vsync, não do renderer.
+
+### Achado: `!` não é neutro numericamente
+
+Os checksums do mesmo frame divergem conforme o binário foi compilado com `!`
+ou sem:
+
+| binário | GPU | 10 cores | 1 thread |
+|---|---|---|---|
+| com `total!(...)` | 4171263204 | 4171263204 | 4171263204 |
+| com `total(...)` | 4169746902 | 4169746902 | 4169746902 |
+
+Cada um é determinístico; eles diferem **entre si**. Não é imprecisão de GPU —
+o binário com `!` dá o mesmo resultado rodando em 1 thread de CPU. É o `!` em
+si, que o guia descreve só como onde a chamada roda.
+
+O delta é `1516302`, que decompõe em `rgb(23,35,14)` = a cor da grama × 0,20 —
+exatamente o vão entre o sombreamento da face-x (0,68) e da face-z (0,48). Ou
+seja: **um único pixel** escolhe face diferente, num raio que bate na aresta
+onde `tMaxX ≈ tMaxZ` e o desempate tomba pro outro lado.
+
+Impacto prático nulo (as capturas da janela são idênticas pixel a pixel, com o
+comparador validado por um controle de 22,6%). Mas numa linguagem que vende
+correção demonstrável, `f!(x) ≠ f(x)` merece registro. Não consegui reduzir a
+um caso mínimo — aritmética F32 simples com e sem `!` dá igual.
+
 ## Publicado no BendHub
 
 O conjunto provado está no [BendHub](https://hub.bend-lang.com), importável por
