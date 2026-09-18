@@ -231,20 +231,37 @@ até tiles de 8×8 e resolve os 64 pixels do tile em linha reta.
 
 ### O que realmente comprou o ganho
 
+Medido de novo com Low Power Mode desligado, 5 execuções, mediana (os números
+anteriores nesta seção estavam inflados por throttling):
+
 | | GPU ms/frame |
 |---|---|
-| 03: fork por pixel, raio partindo da câmera | ~91 |
-| + clip do raio contra a caixa do mundo | ~50 |
-| + fork por tile em vez de por pixel | ~48 |
+| 03: fork por pixel, raio partindo da câmera | 47 |
+| 04: + clip do raio contra a caixa do mundo | 27 |
 
-O peso está quase todo no **clip**: começar o DDA na fronteira da caixa em vez
-da câmera, e devolver céu na hora pra quem nem entra nela. A granularidade do
-fork rendeu ~4% aqui.
+O ganho é o **clip**: começar o DDA na fronteira da caixa em vez da câmera, e
+devolver céu na hora pra quem nem entra nela.
 
-Isso não contradiz o Taelin — é outra carga. A `bend3d` binariza triângulos por
-tile, então o tile é uma unidade de *trabalho compartilhado*. Num raycaster cada
+### A granularidade do fork não mudou nada aqui
+
+Ablação isolada (mesmo código, muda só onde o fork para), 5 execuções:
+
+| | GPU | CPU |
+|---|---|---|
+| fork por pixel (9 níveis) | 24 ms | 23 ms |
+| fork por tile 8×8 (6 níveis) | 23 ms | 24 ms |
+
+Ranges apertados (23–23 no caso do tile), então não é ruído: **é zero**.
+
+Isso não contradiz o conselho do Taelin — é outra carga. A `bend3d` binariza
+triângulos por tile, então o tile é uma unidade de *trabalho compartilhado*:
+os 256 pixels do tile leem a mesma lista de triângulos. Num raycaster cada
 pixel é independente e não há nada a compartilhar, então o custo de escalonar
-não domina.
+não domina. Mantive o fork por tile porque é o idioma da lib, não porque mediu
+mais rápido.
+
+Nota: nesta carga a GPU também não ganha da CPU (27 vs 25 ms). O `!` só rendeu
+de verdade no mandelbrot puro, que não aloca.
 
 ### Duas otimizações que eu tentei e removi
 
@@ -309,13 +326,13 @@ O gargalo é ler a árvore compartilhada. Medido isolando cada camada:
 
 | | ms/frame (512²) |
 |---|---|
-| zero leituras (coluna procedural) | 26 |
-| **uma** leitura por raio | 157 |
+| zero leituras (coluna procedural) | 18 |
+| **uma** leitura por raio | 112 |
 | releitura durante o DDA (correto) | ~5950 |
 
-Uma leitura de árvore compartilhada custa **~500 ns** — cinco níveis de
+Uma leitura de árvore compartilhada custa **~358 ns** — cinco níveis de
 ponteiro com tráfego de refcount. Isso é o teto: mesmo uma leitura por pixel a
-512² já custa 131 ms.
+512² já custa 94 ms.
 
 Por isso a demo renderiza a **128²** (~370 ms/frame): responde ao teclado, mas
 não é fluida. É o preço honesto de um mundo editável e compartilhado em Bend
@@ -340,9 +357,8 @@ conversão direta F32↔U32.
 
 Os benchmarks desta seção foram feitos na bateria. Rodando o mesmo binário em
 momentos diferentes, vi variação de até **1,7x** (25 ms a 43 ms). Efeitos
-grandes (6x, 38x) sobrevivem a isso; **efeitos pequenos não**. Em particular, a
-atribuição "o fork por tile rendeu ~4%" na seção anterior está dentro do ruído
-e não se sustenta — o que se sustenta é que o clip de caixa é o ganho grande.
+grandes (6x, 38x) sobrevivem a isso; **efeitos pequenos não**. Os números das seções acima
+foram refeitos com LPM desligado e 5 execuções.
 
 ## Publicado no BendHub
 
