@@ -96,30 +96,35 @@ não existe early return: o laço de escape queima as 200 iterações em *todo*
 pixel, até nos que escapam no passo 2. Na CPU é desperdício puro. Na GPU é o
 caso ideal — toda lane roda o mesmo número de passos, divergência zero.
 
-### Benchmark honesto
+### Benchmark
 
-Checksum idêntico (`9962648` / `159198195`) nos três backends, então a
-comparação é válida:
+Cronometrado **por dentro do processo** com `IO.now()`, 10 execuções, checksum
+verificado idêntico nos três backends. 512×512 pixels × 200 iterações:
 
-| carga | 1 thread | 10 cores | GPU (Metal) |
-|---|---|---|---|
-| 512² × 200 iter (52M)   | 0,78 s | **0,081 s** (9,7x) | 0,64 s |
-| 2048² × 200 iter (838M) | —      | **1,13 s**         | 1,38 s |
+| | ms/frame | ganho |
+|---|---|---|
+| 1 thread | 428 | — |
+| 10 cores | 47 | 9,1x |
+| **GPU (Metal)** | **20** | **21x** (2,4x sobre os 10 cores) |
 
-Nesta carga a GPU **não** ganha. O M5 tem 8 núcleos de GPU contra 10 de CPU, e
-o gargalo parece ser alocação de nós da quadtree, não a aritmética. O `!` só
-compensou no `pow2` puro, que não aloca.
+Bate com o medido na janela: 58 fps ≈ 17 ms/frame.
 
-Cuidado ao medir: `ps -o %cpu` no macOS dá a média desde o início do processo,
-não o instantâneo — inútil pra isso. Contar frames é o que vale.
+### Como medir errado (três vezes seguidas)
 
-### Ponta solta
+Vale registrar, porque cada um desses produziu um número convincente e falso:
 
-A janela com escala fixa dá **58 fps**. Mas a computação headless da mesma cena
-leva 0,081 s em 10 cores, o que daria no máximo ~12 fps. Está 5x rápido demais,
-então alguma coisa no caminho da janela não está sendo computada — possivelmente
-a quadtree é montada preguiçosamente e o kernel Metal lê nós ainda não avaliados.
-Não confirmado. Se a janela mostrar um Mandelbrot correto, a hipótese cai.
+1. **`ps -o %cpu`** no macOS dá a média desde o início do processo, não o
+   instantâneo. Deu ~7% pros três backends, escondendo tudo.
+2. **`time ./binario`** inclui o startup. Um binário Bend sobe em ~30 ms, mas
+   **com `--gpu` são ~150 ms** de inicialização do Metal — que afogam uma
+   computação de 20 ms e fazem a GPU parecer 3x mais lenta que a CPU. Foi esse
+   que me fez concluir, erradamente, que a GPU não ganhava aqui.
+3. **Contar frames sem conferir a ordem de grandeza.** 92 fps em 1 thread seriam
+   4,7 bilhões de iterações/s num core — impossível, e era o sinal de que a
+   medição estava quebrada, não o hardware sendo incrível.
+
+O jeito certo: `IO.now()` em volta só da computação, repetida N vezes, com a
+entrada variando a cada volta pra nada ser compartilhado.
 
 ## Publicado no BendHub
 
