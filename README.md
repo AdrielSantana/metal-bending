@@ -272,6 +272,78 @@ Regra que ficou: antes de confiar num controle, confirme que ele produz a
 imagem certa. Um controle mais rápido costuma estar fazendo menos trabalho
 porque está errado.
 
+## Bendcraft: mundo editável
+
+`gfx/05_craft.bend` — primeira pessoa, voo livre, quebrar e colocar bloco.
+
+```sh
+bend gfx/05_craft.bend -o build/craft
+./build/craft --gpu 2GB
+```
+
+`W A S D` move · setas olham · `I`/`K` sobe e desce · `J` quebra · `L` coloca · `Esc` sai
+
+### O mundo é uma árvore, não um array
+
+`Array` em Bend é `Type`: dono único, então **não pode ser lido pelos dois
+lados de uma chamada paralela** — inútil num renderizador onde todo pixel lê o
+mundo ao mesmo tempo. Então o mundo é uma quadtree `Data` sobre as 32×32
+colunas, e cada folha é **um U32 cujo bit `y` diz "tem bloco na altura y"**.
+Marcada `+`, é compartilhada por todos os pixels; editar reconstrói um caminho
+de cinco nós e o resto continua compartilhado.
+
+32 alturas em uma palavra é o que torna isso viável: uma coluna é uma palavra
+de máquina, e quebrar/colocar é um bit.
+
+Verificado sem GUI (`feed` e `step` são puros, dá pra simular eventos):
+
+```
+blocos, nada apertado : 102282128
+blocos, J (quebrar)   : 102281872   (-256 = exatamente um bit da altura 8)
+blocos, L (colocar)   : 102282384   (+256)
+```
+
+### O custo, particionado
+
+O gargalo é ler a árvore compartilhada. Medido isolando cada camada:
+
+| | ms/frame (512²) |
+|---|---|
+| zero leituras (coluna procedural) | 26 |
+| **uma** leitura por raio | 157 |
+| releitura durante o DDA (correto) | ~5950 |
+
+Uma leitura de árvore compartilhada custa **~500 ns** — cinco níveis de
+ponteiro com tráfego de refcount. Isso é o teto: mesmo uma leitura por pixel a
+512² já custa 131 ms.
+
+Por isso a demo renderiza a **128²** (~370 ms/frame): responde ao teclado, mas
+não é fluida. É o preço honesto de um mundo editável e compartilhado em Bend
+hoje, e vale reportar upstream.
+
+### Duas armadilhas O(n) no Base
+
+Ambas me custaram caro, e a causa raiz é a mesma:
+
+- `U32.shln(a, n)` é **O(n)** — um `U32.shl` recursivo por unidade de `n`.
+  Deslocar por 20 são 20 chamadas. Solução aqui: o DDA carrega a máscara
+  `1<<y` e desloca **um** bit por passo, nunca por valor variável.
+- `U32.from_nat(n)` é **O(valor)** — `U32.inc` recursivo n vezes.
+
+As versões O(1) existem: `F32.to_u32`, `U32.to_f32`, `F32.sin`, `F32.sqrt`.
+Mas são declaradas como **`law`** (primitivas do compilador), não `def` — então
+`bend base | grep '^def F32'` **não as mostra**. Eu caí nessa duas vezes na
+mesma sessão: primeiro achei que não havia trigonometria, depois que não havia
+conversão direta F32↔U32.
+
+### Aviso sobre as medições
+
+Os benchmarks desta seção foram feitos na bateria. Rodando o mesmo binário em
+momentos diferentes, vi variação de até **1,7x** (25 ms a 43 ms). Efeitos
+grandes (6x, 38x) sobrevivem a isso; **efeitos pequenos não**. Em particular, a
+atribuição "o fork por tile rendeu ~4%" na seção anterior está dentro do ruído
+e não se sustenta — o que se sustenta é que o clip de caixa é o ganho grande.
+
 ## Publicado no BendHub
 
 O conjunto provado está no [BendHub](https://hub.bend-lang.com), importável por
