@@ -70,6 +70,57 @@ Sem táticas: proposição é tipo, prova é `def` desse tipo. `{==}` fecha por
 reflexividade, `%e : P` reescreve, e a chamada recursiva **é** a hipótese de
 indução.
 
+## Gráficos: renderizando no Metal
+
+Renderizar **já funciona**, sem lib de terceiro. `gfx/` tem três programas:
+
+| arquivo | o quê |
+|---|---|
+| `gfx/00_window.bend`     | quatro quadrantes coloridos — o "hello world" da janela |
+| `gfx/01_mandelbrot.bend` | Mandelbrot 512×512 estático |
+| `gfx/02_zoom.bend`       | zoom animado, re-renderizado por frame |
+
+```sh
+bend gfx/01_mandelbrot.bend -o build/mandel
+./build/mandel --gpu 2GB      # precisa do build/mandel.gpu ao lado
+```
+
+Dois detalhes bonitos:
+
+**O rasterizador do Bend já é um kernel Metal.** Em `effs/window_frame.c` há um
+`kernel void window_dev` em MSL que percorre a quadtree por pixel na GPU. Então
+a janela renderiza no Metal mesmo sem você escrever `!`.
+
+**A restrição da linguagem cai bem na GPU.** Bend proíbe recursão mútua, logo
+não existe early return: o laço de escape queima as 200 iterações em *todo*
+pixel, até nos que escapam no passo 2. Na CPU é desperdício puro. Na GPU é o
+caso ideal — toda lane roda o mesmo número de passos, divergência zero.
+
+### Benchmark honesto
+
+Checksum idêntico (`9962648` / `159198195`) nos três backends, então a
+comparação é válida:
+
+| carga | 1 thread | 10 cores | GPU (Metal) |
+|---|---|---|---|
+| 512² × 200 iter (52M)   | 0,78 s | **0,081 s** (9,7x) | 0,64 s |
+| 2048² × 200 iter (838M) | —      | **1,13 s**         | 1,38 s |
+
+Nesta carga a GPU **não** ganha. O M5 tem 8 núcleos de GPU contra 10 de CPU, e
+o gargalo parece ser alocação de nós da quadtree, não a aritmética. O `!` só
+compensou no `pow2` puro, que não aloca.
+
+Cuidado ao medir: `ps -o %cpu` no macOS dá a média desde o início do processo,
+não o instantâneo — inútil pra isso. Contar frames é o que vale.
+
+### Ponta solta
+
+A janela com escala fixa dá **58 fps**. Mas a computação headless da mesma cena
+leva 0,081 s em 10 cores, o que daria no máximo ~12 fps. Está 5x rápido demais,
+então alguma coisa no caminho da janela não está sendo computada — possivelmente
+a quadtree é montada preguiçosamente e o kernel Metal lê nós ainda não avaliados.
+Não confirmado. Se a janela mostrar um Mandelbrot correto, a hipótese cai.
+
 ## Publicado no BendHub
 
 O conjunto provado está no [BendHub](https://hub.bend-lang.com), importável por
