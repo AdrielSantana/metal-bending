@@ -9,6 +9,7 @@ const pairs = [
   ["04_voxel_fast.html", "gpu_voxel.html"],
   ["app_ray_tracer_3d.html", "gpu_raytracer.html"],
   ["raytracer_512.html", "gpu_raytracer.html?res=512"],
+  ["05_craft.html", "gpu_craft.html"],
 ];
 const MARK = "<!-- mode selector -->";
 const edit = (name, fn) => { const p = join(dir, name); const s = readFileSync(p, "utf8"); if (s.includes(MARK)) return "kept " + name; writeFileSync(p, fn(s)); return "edited " + name; };
@@ -35,6 +36,7 @@ const gpuPages = {
   "gpu_mandelbrot.html": '"mandelbrot.html"',
   "gpu_voxel.html": '"04_voxel_fast.html"',
   "gpu_raytracer.html": 'new URLSearchParams(location.search).get("res") == "512" ? "raytracer_512.html" : "app_ray_tracer_3d.html"',
+  "gpu_craft.html": '"05_craft.html"',
 };
 for (const [name, cpuExpr] of Object.entries(gpuPages)) {
   console.log(edit(name, (s) => {

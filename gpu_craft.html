@@ -1,0 +1,187 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Bendcraft (Bend on WebGPU)</title>
+<style>.note{color:#7a8798;font-size:13px;margin:8px;max-width:760px}body{margin:0;background:#0b0e14;color:#c9d4e3;font:14px ui-monospace,Menlo,monospace}canvas{display:block}pre{margin:8px;white-space:pre-wrap;word-break:break-all}a{color:#59e3ff}select{font:inherit;color:inherit;background:#222;border:1px solid #444}</style></head>
+<body><canvas id="bend" tabindex="0"></canvas><pre>on <select id="bend-threads"></select>, <span id="bend-fps">starting on the GPU…</span></pre><!-- mode selector -->
+<script>
+  // the same selector as the CPU page: the threads entries go back to it
+  var select = document.getElementById("bend-threads"), cores = navigator.hardwareConcurrency;
+  select.appendChild(new Option("WebGPU", "gpu"));
+  for (var i = 1; i <= cores; i += 1) select.appendChild(new Option(i + (i == 1 ? " thread" : " threads"), i));
+  select.onchange = function() { if (select.value != "gpu") location.href = ("05_craft.html") + "?threads=" + select.value; };
+</script><pre id="bend-out"></pre>
+<p class="note">Bendcraft 512×512 on WebGPU: the first-person voxel world of the CPU page, its rays as written (<code>fork!(7n)</code> to 4×4 tiles, a DDA of 60 steps, the 2×2 collapse). W/A/S/D move, arrows look, I/K up and down, J breaks the block under the crosshair, L places one on its face. The world is 1024 columns of 32 bits in a 4 KB buffer: an untouched column is computed from the terrain function on the GPU, as the Bend program does at a <code>WNone</code>; an edited one is written by the page, which runs the picking in JavaScript. <code>?built=300</code> starts with the benchmark's 300 placed blocks. The CPU page does 20 fps on ten cores. Numbers and the how on the <a href="index.html">index</a>.</p>
+<script type="module">
+import { page } from "./page.js";
+// gfx/05_craft.bend: fork!(7n, g, 0, 0) down to 4x4 tiles, t4 -> t2 -> pixel -> shade_px -> clipped -> run_dda -> dda(60n)
+const WGSL = `
+fn root_args() -> array<vec2<u32>, 3> { for (var i = 0u; i < 5u; i++) { st(8u + i, imm(uv(i))); } return array<vec2<u32>, 3>(imm(0u), imm(0u), mk(TAG_CTR, 0u, 8u)); }
+fn kid_s(j: u32, s: vec2<u32>) -> vec2<u32> { return s; }
+fn kid(i: u32, j: u32, x: vec2<u32>, y: vec2<u32>, s: vec2<u32>) -> array<vec2<u32>, 2> {
+  let h = 4u << j; return array<vec2<u32>, 2>(imm(x.x + select(0u, h, (i & 1u) == 1u)), imm(y.x + select(0u, h, i >= 2u)));
+}
+fn floorf(x: f32) -> f32 { return f32(u32(x)); }
+fn absf(x: f32) -> f32 { return max(x, 0.0 - x); }
+fn f2u(x: f32) -> u32 { return u32(max(x, 0.0)); }
+fn on(mask: u32, bit: u32) -> bool { return (mask & bit) > 0u; }
+fn shln(a: u32, n: u32) -> u32 { return select(a << n, 0u, n > 31u); }
+fn terrain(x: u32, z: u32) -> u32 { let h = 12.0 + 5.0 * sin(f32(x) * 0.26) + 4.0 * cos(f32(z) * 0.19); return u32(clamp(h, 2.0, 27.0)); }
+fn column(x: u32, z: u32) -> u32 { return shln(1u, terrain(x, z)) - 1u; }
+// the world: 32x32 columns in data; NONE is a column nobody edited, computed from the terrain as at a WNone
+fn wread(x: u32, z: u32) -> u32 { let c = data[min(x, 31u) * 32u + min(z, 31u)]; return select(c, column(x, z), c == 0xFFFFFFFFu); }
+fn inside(vx: f32, vy: f32, vz: f32) -> bool { return vx > (0.0 - 0.5) && vx < 31.5 && vz > (0.0 - 0.5) && vz < 31.5 && vy > (0.0 - 0.5) && vy < 31.5; }
+fn voxel_color(bits: u32, ymask: u32) -> u32 {
+  let top = !on(bits, ymask << 1u); let deep = on(bits, ymask << 3u);
+  return select(select(rgb(134u, 96u, 67u), rgb(117u, 176u, 73u), top), rgb(130u, 130u, 130u), deep);
+}
+fn scale(c: u32, k: f32) -> u32 { return u32(f32(c) * k); }
+fn dim(c: u32, k: f32) -> u32 { let r = c / 65536u; let g = c / 256u % 256u; let bb = c % 256u; return rgb(scale(r, k), scale(g, k), scale(bb, k)); }
+fn lit(bits: u32, ymask: u32, axis: f32) -> u32 { let k = select(select(0.48, 1.0, axis < 1.5), 0.68, axis < 0.5); return dim(voxel_color(bits, ymask), k); }
+fn sky_at(yq: u32) -> u32 { let g = yq * 55u / 512u; return rgb(110u + g, 150u + g, 235u); }
+fn band(y: u32) -> u32 { return y / 8u * 8u; }
+fn dda(vx0: f32, vy0: f32, vz0: f32, sx: f32, sy: f32, sz: f32, mx0: f32, my0: f32, mz0: f32, ex: f32, ey: f32, ez: f32, bits0: u32, ymask0: u32) -> u32 {
+  var vx = vx0; var vy = vy0; var vz = vz0; var mx = mx0; var my = my0; var mz = mz0; var axis = 1.0; var col = 0u; var bits = bits0; var ymask = ymask0;
+  for (var i = 0u; i < 60u; i++) {
+    let here = inside(vx, vy, vz) && on(bits, ymask) && (col < 1u);
+    var ncol = col; if (here) { ncol = lit(bits, ymask, axis); }
+    let ux = (mx < my) && (mx < mz);
+    let uy = select(my < mz, false, ux);
+    let nvx = select(vx, vx + sx, ux); let nvy = select(vy, vy + sy, uy); let nvz = select(select(vz + sz, vz, uy), vz, ux);
+    let nmx = select(mx, mx + ex, ux); let nmy = select(my, my + ey, uy); let nmz = select(select(mz + ez, mz, uy), mz, ux);
+    let naxis = select(select(2.0, 1.0, uy), 0.0, ux);
+    let nymask = select(ymask, select(ymask >> 1u, ymask << 1u, sy > 0.0), uy);
+    // the world is read on a column crossing only, and never again once this ray has its block
+    var nbits = bits; if (!uy && ncol < 1u) { nbits = wread(f2u(nvx), f2u(nvz)); }
+    vx = nvx; vy = nvy; vz = nvz; mx = nmx; my = nmy; mz = nmz; axis = naxis; col = ncol; bits = nbits; ymask = nymask;
+  }
+  return col;
+}
+fn run_dda(ox: f32, oy: f32, oz: f32, dx: f32, dy: f32, dz: f32, v: u32) -> u32 {
+  let vx = floorf(max(ox, 0.0)); let vy = floorf(max(oy, 0.0)); let vz = floorf(max(oz, 0.0));
+  let px = dx > 0.0; let py = dy > 0.0; let pz = dz > 0.0;
+  let ax = max(absf(dx), 0.00001); let ay = max(absf(dy), 0.00001); let az = max(absf(dz), 0.00001);
+  let nx = select(ox - vx, vx + 1.0 - ox, px); let ny = select(oy - vy, vy + 1.0 - oy, py); let nz = select(oz - vz, vz + 1.0 - oz, pz);
+  let c = dda(vx, vy, vz, select(0.0 - 1.0, 1.0, px), select(0.0 - 1.0, 1.0, py), select(0.0 - 1.0, 1.0, pz), nx / ax, ny / ay, nz / az, 1.0 / ax, 1.0 / ay, 1.0 / az,
+    wread(f2u(vx), f2u(vz)), shln(1u, u32(max(oy, 0.0))));
+  return select(c, sky_at(v), c < 1u);
+}
+fn clipped(ox: f32, oy: f32, oz: f32, dx: f32, dy: f32, dz: f32, v: u32) -> u32 {
+  let rx = 1.0 / max(absf(dx), 0.00001) * select(0.0 - 1.0, 1.0, dx > 0.0);
+  let ry = 1.0 / max(absf(dy), 0.00001) * select(0.0 - 1.0, 1.0, dy > 0.0);
+  let rz = 1.0 / max(absf(dz), 0.00001) * select(0.0 - 1.0, 1.0, dz > 0.0);
+  let xa = (0.0 - ox) * rx; let xb = (32.0 - ox) * rx; let ya = (0.0 - oy) * ry; let yb = (32.0 - oy) * ry; let za = (0.0 - oz) * rz; let zb = (32.0 - oz) * rz;
+  let tin = max(max(min(xa, xb), min(ya, yb)), max(min(za, zb), 0.0));
+  let tout = min(min(max(xa, xb), max(ya, yb)), max(za, zb));
+  let s = tin + 0.002;
+  if (tin < tout) { return run_dda(ox + dx * s, oy + dy * s, oz + dz * s, dx, dy, dz, v); }
+  return sky_at(v);
+}
+fn shade_px(pxi: u32, pyi: u32, cam: u32) -> u32 {
+  let ox = f(ld(cam).x); let oy = f(ld(cam + 1u).x); let oz = f(ld(cam + 2u).x); let yaw = f(ld(cam + 3u).x); let pit = f(ld(cam + 4u).x);
+  let u = f32(pxi) / 256.0 - 1.0; let v = f32(pyi) / 256.0 - 1.0;
+  let fx = cos(pit) * sin(yaw); let fy = sin(pit); let fz = cos(pit) * cos(yaw);
+  let rl = max(sqrt(fz * fz + 0.0 * 0.0 + (0.0 - fx) * (0.0 - fx)), 0.00001);
+  let rx = fz / rl; let rz = (0.0 - fx) / rl;
+  let ux = 0.0 - rz * fy; let uy = rz * fx - rx * fz; let uz = rx * fy;
+  let dx = fx + 0.9 * u * rx + 0.9 * v * ux; let dy = fy + 0.9 * v * uy; let dz = fz + 0.9 * u * rz + 0.9 * v * uz;
+  let n = max(sqrt(dx * dx + dy * dy + dz * dz), 0.00001);
+  return clipped(ox, oy, oz, dx / n, dy / n, dz / n, band(pyi));
+}
+fn cross_at(pxi: u32, pyi: u32) -> bool {
+  let dx = select(256u - pxi, pxi - 256u, pxi > 256u); let dy = select(256u - pyi, pyi - 256u, pyi > 256u);
+  return (dx < 1u && dy < 5u) || (dy < 1u && dx < 5u);
+}
+fn pixel(pxi: u32, pyi: u32, cam: u32) -> u32 { if (cross_at(pxi, pyi)) { return rgb(255u, 255u, 255u); } return shade_px(pxi, pyi, cam); }
+fn t2(x: u32, y: u32, cam: u32) -> vec2<u32> {
+  let k0 = pixel(x, y, cam); let k1 = pixel(x + 1u, y, cam); let k2 = pixel(x, y + 1u, cam); let k3 = pixel(x + 1u, y + 1u, cam);
+  if (k0 == k1 && k1 == k2 && k2 == k3) { let l = alloc(1u); st(l, imm(k0)); return mk(TAG_CTR, CID_PIX, l); }
+  let p = alloc(4u); st(p, imm(k0)); st(p + 1u, imm(k1)); st(p + 2u, imm(k2)); st(p + 3u, imm(k3));
+  let qq = alloc(4u); for (var i = 0u; i < 4u; i++) { st(qq + i, mk(TAG_CTR, CID_PIX, p + i)); }
+  return mk(TAG_CTR, CID_QUA, qq);
+}
+fn leaf(x: vec2<u32>, y: vec2<u32>, s: vec2<u32>) -> vec2<u32> {
+  let cam = s.x; let qq = alloc(4u);
+  st(qq, t2(x.x, y.x, cam)); st(qq + 1u, t2(x.x + 2u, y.x, cam)); st(qq + 2u, t2(x.x, y.x + 2u, cam)); st(qq + 3u, t2(x.x + 2u, y.x + 2u, cam));
+  return mk(TAG_CTR, CID_QUA, qq);
+}`;
+// ---- the host side: the world, the player, the picking (tick, step, aim, wmod), in JS ----
+const q = new URLSearchParams(location.search), fr = Math.fround, NONE = 0xFFFFFFFF;
+const world = new Uint32Array(1024).fill(NONE);
+let rt = null, dirty = true;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x)), floorf = (x) => Math.trunc(Math.max(x, 0)), f2u = floorf, absf = (x) => Math.max(x, -x);
+const shln = (a, n) => n > 31 ? 0 : (a * 2 ** n) % 4294967296;
+const terrain = (x, z) => Math.trunc(clamp(fr(fr(12 + fr(5 * fr(Math.sin(fr(x * fr(0.26)))))) + fr(4 * fr(Math.cos(fr(z * fr(0.19)))))), 2, 27));
+const column = (x, z) => shln(1, terrain(x, z)) - 1;
+const wread = (x, z) => { const c = world[Math.min(x, 31) * 32 + Math.min(z, 31)]; return c === NONE ? column(x, z) : c; };
+const wmod = (x, z, ybit, set) => { const i = x * 32 + z, c = world[i] === NONE ? column(x, z) : world[i]; world[i] = (set ? c | ybit : c & ~ybit) >>> 0; dirty = true; };
+const inside = (vx, vy, vz) => vx > -0.5 && vx < 31.5 && vz > -0.5 && vz < 31.5 && vy > -0.5 && vy < 31.5;
+const on = (mask, bit) => (mask & bit) !== 0;
+const solid = (vx, vy, vz) => inside(vx, vy, vz) && on(wread(f2u(vx), f2u(vz)), shln(1, Math.trunc(Math.max(vy, 0))));
+const pk = (x, y, z) => (f2u(x) * 32 + f2u(y)) * 32 + f2u(z);
+// pick(40n): 0 = nothing, else 1 + prev * 32768 + hit; prev is the voxel before the hit, the face to place on
+function aim(ox, oy, oz, dx, dy, dz) {
+  let vx = floorf(ox), vy = floorf(oy), vz = floorf(oz);
+  const px = dx > 0, py = dy > 0, pz = dz > 0, ax = Math.max(absf(dx), 1e-5), ay = Math.max(absf(dy), 1e-5), az = Math.max(absf(dz), 1e-5);
+  const sx = px ? 1 : -1, sy = py ? 1 : -1, sz = pz ? 1 : -1, ex = 1 / ax, ey = 1 / ay, ez = 1 / az;
+  let mx = (px ? vx + 1 - ox : ox - vx) / ax, my = (py ? vy + 1 - oy : oy - vy) / ay, mz = (pz ? vz + 1 - oz : oz - vz) / az, prev = 0, res = 0;
+  for (let i = 0; i < 40; i++) {
+    const take = solid(vx, vy, vz) && res < 1, nres = take ? 1 + prev * 32768 + pk(vx, vy, vz) : res;
+    const ux = mx < my && mx < mz, uy = ux ? false : my < mz;
+    const nvx = ux ? vx + sx : vx, nvy = uy ? vy + sy : vy, nvz = ux ? vz : uy ? vz : vz + sz, nmx = ux ? mx + ex : mx, nmy = uy ? my + ey : my, nmz = ux ? mz : uy ? mz : mz + ez;
+    prev = pk(vx, vy, vz); res = nres; vx = nvx; vy = nvy; vz = nvz; mx = nmx; my = nmy; mz = nmz;
+  }
+  return res;
+}
+const applyEdit = (idx, set) => wmod(Math.floor(idx / 1024), idx % 32, shln(1, Math.floor(idx / 32) % 32), set);
+const S = { px: 16.5, py: 22.0, pz: 4.5, yaw: 0, pit: -0.55, held: 0, edge: 0 };
+const KEYS = { KeyW: 1, KeyA: 2, KeyS: 4, KeyD: 8, ArrowUp: 16, ArrowDown: 32, ArrowLeft: 64, ArrowRight: 128, KeyI: 256, KeyK: 512, KeyJ: 1024, KeyL: 2048 };
+window.addEventListener("keydown", (e) => { const m = KEYS[e.code]; if (m) { S.edge |= m & ~S.held; S.held |= m; e.preventDefault(); } });
+window.addEventListener("keyup", (e) => { const m = KEYS[e.code]; if (m) { S.held &= ~m; e.preventDefault(); } });
+const ax2 = (neg, pos) => ((S.held & pos) ? 1 : 0) - ((S.held & neg) ? 1 : 0);
+function step() {
+  const nyaw = S.yaw + 0.055 * ax2(64, 128), npit = clamp(S.pit + 0.045 * ax2(32, 16), -1.45, 1.45);
+  const sy = Math.sin(nyaw), cy = Math.cos(nyaw), fw = ax2(4, 1), st = ax2(2, 8);
+  const npx = clamp(S.px + 0.28 * (fw * sy + st * cy), 0.5, 31.5), npy = clamp(S.py + 0.28 * ax2(512, 256), 0.5, 31.5), npz = clamp(S.pz + 0.28 * (fw * cy - st * sy), 0.5, 31.5);
+  const hit = aim(npx, npy, npz, Math.cos(npit) * Math.sin(nyaw), Math.sin(npit), Math.cos(npit) * Math.cos(nyaw));
+  if (hit > 0 && (S.edge & 1024)) applyEdit((hit - 1) % 32768, false);
+  if (hit > 0 && (S.edge & 2048)) applyEdit(Math.floor((hit - 1) / 32768), true);
+  S.px = npx; S.py = npy; S.pz = npz; S.yaw = nyaw; S.pit = npit; S.edge = 0;
+}
+const words = (px, py, pz, yaw, pit) => { const w = new Uint32Array(16); new Float32Array(w.buffer).set([px, py, pz, yaw, pit]); return w; };
+// the benchmark's frames: start() turned 0.01 rad a frame, in f32 as the Bend program accumulates it
+const bench = (i) => { let yaw = 0; for (let k = 0; k < i; k++) yaw = fr(yaw + fr(0.01)); return words(16.5, 22.0, 4.5, yaw, fr(-0.55)); };
+// the same pixel in JS (doubles), for the check
+const rgb = (r, g, b) => r * 65536 + g * 256 + b, scale = (c, k) => Math.trunc(c * k);
+const dimc = (c, k) => rgb(scale(Math.floor(c / 65536), k), scale(Math.floor(c / 256) % 256, k), scale(c % 256, k));
+const vcolor = (bits, ymask) => on(bits, (ymask * 8) % 4294967296) ? rgb(130, 130, 130) : !on(bits, (ymask * 2) % 4294967296) ? rgb(117, 176, 73) : rgb(134, 96, 67);
+const lit = (bits, ymask, axis) => dimc(vcolor(bits, ymask), axis < 0.5 ? 0.68 : axis < 1.5 ? 1.0 : 0.48);
+const sky = (yq) => { const g = Math.floor(yq * 55 / 512); return rgb(110 + g, 150 + g, 235); };
+function dda(vx, vy, vz, sx, sy, sz, mx, my, mz, ex, ey, ez, bits, ymask) { let axis = 1, col = 0;
+  for (let i = 0; i < 60; i++) { const here = inside(vx, vy, vz) && on(bits, ymask) && col < 1, ncol = here ? lit(bits, ymask, axis) : col;
+    const ux = mx < my && mx < mz, uy = ux ? false : my < mz;
+    const nvx = ux ? vx + sx : vx, nvy = uy ? vy + sy : vy, nvz = ux ? vz : uy ? vz : vz + sz, nmx = ux ? mx + ex : mx, nmy = uy ? my + ey : my, nmz = ux ? mz : uy ? mz : mz + ez;
+    const nymask = uy ? (sy > 0 ? (ymask * 2) % 4294967296 : Math.floor(ymask / 2)) : ymask, nbits = !uy && ncol < 1 ? wread(f2u(nvx), f2u(nvz)) : bits;
+    axis = ux ? 0 : uy ? 1 : 2; vx = nvx; vy = nvy; vz = nvz; mx = nmx; my = nmy; mz = nmz; col = ncol; bits = nbits; ymask = nymask; }
+  return col; }
+function runDda(ox, oy, oz, dx, dy, dz, v) { const vx = floorf(ox), vy = floorf(oy), vz = floorf(oz), px = dx > 0, py = dy > 0, pz = dz > 0;
+  const ax = Math.max(absf(dx), 1e-5), ay = Math.max(absf(dy), 1e-5), az = Math.max(absf(dz), 1e-5);
+  const c = dda(vx, vy, vz, px ? 1 : -1, py ? 1 : -1, pz ? 1 : -1, (px ? vx + 1 - ox : ox - vx) / ax, (py ? vy + 1 - oy : oy - vy) / ay, (pz ? vz + 1 - oz : oz - vz) / az, 1 / ax, 1 / ay, 1 / az, wread(f2u(vx), f2u(vz)), shln(1, Math.trunc(Math.max(oy, 0))));
+  return c < 1 ? sky(v) : c; }
+function clipped(ox, oy, oz, dx, dy, dz, v) { const rx = 1 / Math.max(absf(dx), 1e-5) * (dx > 0 ? 1 : -1), ry = 1 / Math.max(absf(dy), 1e-5) * (dy > 0 ? 1 : -1), rz = 1 / Math.max(absf(dz), 1e-5) * (dz > 0 ? 1 : -1);
+  const xa = -ox * rx, xb = (32 - ox) * rx, ya = -oy * ry, yb = (32 - oy) * ry, za = -oz * rz, zb = (32 - oz) * rz;
+  const tin = Math.max(Math.max(Math.min(xa, xb), Math.min(ya, yb)), Math.max(Math.min(za, zb), 0)), tout = Math.min(Math.min(Math.max(xa, xb), Math.max(ya, yb)), Math.max(za, zb)), s = tin + 0.002;
+  return tin < tout ? runDda(ox + dx * s, oy + dy * s, oz + dz * s, dx, dy, dz, v) : sky(v); }
+function ref(pxi, pyi, w) { const c = new Float32Array(w.buffer), ax = Math.abs(pxi - 256), ay = Math.abs(pyi - 256);
+  if ((ax < 1 && ay < 5) || (ay < 1 && ax < 5)) return rgb(255, 255, 255);
+  const u = pxi / 256 - 1, v = pyi / 256 - 1, yaw = c[3], pit = c[4], fx = Math.cos(pit) * Math.sin(yaw), fy = Math.sin(pit), fz = Math.cos(pit) * Math.cos(yaw);
+  const rl = Math.max(Math.hypot(fz, 0, -fx), 1e-5), rx = fz / rl, rz = -fx / rl, ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+  const dx = fx + 0.9 * u * rx + 0.9 * v * ux, dy = fy + 0.9 * v * uy, dz = fz + 0.9 * u * rz + 0.9 * v * uz, n = Math.max(Math.hypot(dx, dy, dz), 1e-5);
+  return clipped(c[0], c[1], c[2], dx / n, dy / n, dz / n, Math.floor(pyi / 8) * 8); }
+// Bend's checksum of the frame: total(9n, view(g)) counts a collapsed 2x2 tile once
+const sum = (p) => { let s = 0; for (let y = 0; y < 512; y += 2) for (let x = 0; x < 512; x += 2) { const a = p[y * 512 + x], b = p[y * 512 + x + 1], c = p[y * 512 + x + 512], d = p[y * 512 + x + 513]; s = (s + (a === b && b === c && c === d ? a : a + b + c + d)) % 4294967296; } return s; };
+window.__craft = { S, world };
+page({ name: "craft", K: 7, W: 512, H: 512, G: 7, leafSlots: 36, heap0: 16, dataWords: 1024, wgsl: WGSL,
+  init: (r) => { rt = r; const n = Number(q.get("built") || 0); for (let i = 0; i < n; i++) wmod(8 + i % 16, 10 + Math.floor(i / 16) % 12, shln(1, 15 + i % 2), true); rt.setData(world); dirty = false; },
+  frames: bench,
+  live: () => { step(); if (dirty) { rt.setData(world); dirty = false; } return words(S.px, S.py, S.pz, S.yaw, S.pit); },
+  ref, sum });
+document.getElementById("bend").focus();
+</script></body></html>

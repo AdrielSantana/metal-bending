@@ -35,6 +35,7 @@ struct Frame { k: u32, w: u32, h: u32, lanes: u32, d: u32, p0: u32, p1: u32, p2:
 @group(0) @binding(10) var<storage, read_write> a0: array<atomic<u32>>;
 @group(0) @binding(11) var<storage, read_write> a1: array<atomic<u32>>;
 @group(0) @binding(12) var<storage, read_write> a2: array<atomic<u32>>;
+@group(0) @binding(13) var<storage, read> data: array<u32>;
 
 var<private> gid: u32;
 var<private> sp: i32;
@@ -198,6 +199,8 @@ export async function start(prog, canvas) {
   const args = [0, 1, 2].map(() => B(256, GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT));
   const Qb = B(3 * 262144 * 8, GPUBufferUsage.STORAGE), pix = B(W * HH * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
   const Pb = B(256 * (ND + 1), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST), Fb = B(96, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+  // a program's own words, read-only on the device (a world, a scene), written by setData
+  const data = B(4 * Math.max(4, prog.dataWords || 0), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
   const pv = new Uint32Array(64 * (ND + 1));
   for (let dd = 1; dd <= ND; dd++) { const mode = dd <= G ? 0 : dd === G + 1 ? 1 : 2; pv.set([mode, (dd - 1) % 3, dd % 3, (dd + 1) % 3, mode === 0 ? SLAB.grow : mode === 1 ? SLAB.work : SLAB.join], dd * 64); }
   d.queue.writeBuffer(Pb, 0, pv);
@@ -205,12 +208,12 @@ export async function start(prog, canvas) {
   const info = await mod.getCompilationInfo();
   for (const m of info.messages) if (m.type === "error") throw new Error("WGSL " + m.lineNum + ":" + m.linePos + " " + m.message);
   const stor = (bnd) => ({ binding: bnd, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } });
-  const base = [0, 1, 2, 3, 4, 6].map(stor).concat([{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", hasDynamicOffset: true } }, { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } }]);
+  const base = [0, 1, 2, 3, 4, 6].map(stor).concat([{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", hasDynamicOffset: true } }, { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } }, { binding: 13, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } }]);
   const bglA = d.createBindGroupLayout({ entries: base.concat([10, 11, 12].map(stor)) });
   const bglB = d.createBindGroupLayout({ entries: base.concat([8, 9].map(stor)) });
   const pipe = (entryPoint, bgl) => d.createComputePipeline({ layout: d.createPipelineLayout({ bindGroupLayouts: [bgl] }), compute: { module: mod, entryPoint } });
   const pReset = pipe("reset", bglA), pRun = pipe("run", bglB), pRaster = pipe("raster", bglB);
-  const ents = [{ binding: 0, resource: { buffer: Hb } }, { binding: 1, resource: { buffer: stk } }, { binding: 2, resource: { buffer: pend } }, { binding: 3, resource: { buffer: ctl } }, { binding: 4, resource: { buffer: Qb } }, { binding: 5, resource: { buffer: Pb, size: 256 } }, { binding: 6, resource: { buffer: pix } }, { binding: 7, resource: { buffer: Fb } }];
+  const ents = [{ binding: 0, resource: { buffer: Hb } }, { binding: 1, resource: { buffer: stk } }, { binding: 2, resource: { buffer: pend } }, { binding: 3, resource: { buffer: ctl } }, { binding: 4, resource: { buffer: Qb } }, { binding: 5, resource: { buffer: Pb, size: 256 } }, { binding: 6, resource: { buffer: pix } }, { binding: 7, resource: { buffer: Fb } }, { binding: 13, resource: { buffer: data } }];
   const bgA = d.createBindGroup({ layout: bglA, entries: ents.concat([10, 11, 12].map((bnd, i) => ({ binding: bnd, resource: { buffer: args[i] } }))) });
   const bgB = [0, 1, 2].map((rot) => d.createBindGroup({ layout: bglB, entries: ents.concat([{ binding: 8, resource: { buffer: args[rot] } }, { binding: 9, resource: { buffer: args[(rot + 1) % 3] } }]) }));
   const ctx = canvas.getContext("webgpu"), fmt = navigator.gpu.getPreferredCanvasFormat();
@@ -245,6 +248,7 @@ export async function start(prog, canvas) {
   };
   return {
     device: d, G, ND, SLAB, LANES, DEPTH, errors, ts,
+    setData(words, at = 0) { d.queue.writeBuffer(data, 4 * at, words); },
     // n frames back to back; GPU time of the compute pass, wall time per frame
     async burst(frames, n) {
       for (let i = 0; i < 3; i++) { setFrame(frames(i)); d.queue.submit([encode(-1, false).finish()]); }
