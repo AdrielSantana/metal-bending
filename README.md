@@ -4,9 +4,11 @@ Playground do [Bend 2](https://bend-lang.com) — linguagem com sintaxe Python,
 semântica Haskell/Lean, afinidade tipo Rust, provas formais e paralelismo
 CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
-> **Estado (18/09/2026):** os renderizadores funcionam e estão medidos. O
-> mundo editável parou num limite da linguagem, não do código — veja
-> [Onde isto para](#onde-isto-para) antes de tentar otimizar mais.
+> **Estado (19/09/2026):** os renderizadores funcionam e estão medidos. O
+> mundo editável tinha parado num limite que eu achei ser da linguagem; o
+> upstream respondeu com a regra, e o Bendcraft com 300 blocos construídos caiu
+> de 26–27 para 6–8 ms — veja
+> [Onde isto parava — e a resposta](#onde-isto-parava--e-a-resposta).
 
 ## Setup
 
@@ -336,7 +338,7 @@ blocos, J (quebrar)   : 102281872   (-256 = exatamente um bit da altura 8)
 blocos, L (colocar)   : 102282384   (+256)
 ```
 
-### O custo, particionado — resolvido para o mundo intocado, não para o editado
+### O custo, particionado
 
 A árvore compartilhada era o gargalo. 512², checksum idêntico em todas as
 linhas, Bend 2.0.9, mediana de 5:
@@ -355,9 +357,10 @@ câmera do laço por pixel (1.00x), cachear o nó da região sozinho (1.00x),
 desenrolar o walk sozinho (1.00x). As duas últimas só funcionam **juntas**
 (1.2x) — dois gargalos em série, remove um e o outro domina.
 
-O que resolveu foi a regra do Taelin: uma árvore com refcount compartilhada por
-todos os pixels custa um atômico por uso, então toque nela o mínimo possível.
-Com o overlay, quase todo raio toca um nó (`WNone`) e calcula o resto.
+O que resolveu foi tocar a árvore o mínimo possível: com o overlay, quase todo
+raio toca um nó (`WNone`) e calcula o resto. Na hora eu atribuí o custo a "um
+atômico por uso" de um valor compartilhado, a regra que tinha lido no
+`bend3d.bend`; a causa real é mais estreita e está em "Onde isto parava".
 
 O demo agora renderiza a **256²** (7 ms com o mundo intocado; era 39 com a
 árvore cheia). Em 128², ao longo da sessão: 234 → 6 ms. A edição segue
@@ -378,13 +381,12 @@ checksum idêntico em todas as linhas), 256², mediana de 5:
 | 1024 (todas) | 41 |
 
 A árvore antiga, com todas as colunas, dava 29. Ou seja: **16 edições
-espalhadas já devolvem o custo inteiro, e com um pouco mais fica pior que
+espalhadas já devolviam o custo inteiro, e com um pouco mais ficava pior que
 antes** — o raio caminha os níveis de cima (agora `WNode`) *e* calcula o
-terreno ao achar `WNone`. O que o overlay vazio provou é que o custo é tocar
-os nós compartilhados do topo por travessia; qualquer edição transforma a raiz
-num `WNode` e devolve esse custo a todo raio. O próximo passo, ainda não
-feito, é um bitmask de "região editada" carregado como escalar (dois `U32`),
-para que só os raios em regiões sujas toquem a árvore.
+terreno ao achar `WNone`. Foi aqui que parei no dia 18, achando que o custo
+era tocar os nós compartilhados do topo por travessia. Não era a travessia:
+era a forma de escolher o quadrante, que fazia o compilador *contar* cada nó.
+"Onde isto parava" tem a regra, a correção e a medida (26–27 → 6–8 ms).
 
 ### Duas armadilhas O(n) no Base
 
@@ -401,6 +403,11 @@ Mas são declaradas como **`law`** (primitivas do compilador), não `def` — en
 mesma sessão: primeiro achei que não havia trigonometria, depois que não havia
 conversão direta F32↔U32.
 
+Atualização: isso descreve o **interpretador**. Num binário compilado as
+quatro são intrínsecas, O(1) — a resposta à #827, em "Onde isto parava", com
+a verificação. A regra do DDA de deslocar um bit por passo continua no código,
+mas por clareza, não por custo.
+
 ### Aviso sobre as medições
 
 Os primeiros benchmarks desta sessão foram feitos na bateria e em Low Power
@@ -410,10 +417,11 @@ com LPM desligado, aquecimento descartado e 5 execuções. A lição fica: efeit
 grandes (6x, 38x) sobrevivem ao ruído, efeitos pequenos não — e eu publiquei
 uma atribuição de ~4% que era zero antes de perceber.
 
-## Onde isto para
+## Onde isto parava — e a resposta
 
-Esta é a limitação que encerrou o trabalho, anotada para quem vier depois —
-inclusive eu.
+Esta era a limitação que encerrou o trabalho no dia 18. Fica registrada como
+estava, porque o diagnóstico errado é a parte instrutiva; depois vem o que o
+upstream respondeu e o que mudou.
 
 **A expectativa.** Um mundo voxel editável deveria custar o mesmo que o
 procedural. Em qualquer engine convencional custa: o mundo vive num buffer
@@ -421,67 +429,102 @@ plano, ler uma coluna é um acesso O(1) à memória, editar é escrever nele. O
 `gfx/04` (procedural, imutável) renderiza 512² em 9 ms. O Bendcraft deveria
 chegar perto.
 
-**O que acontece.** O Bendcraft renderiza 256² a **7 ms enquanto o mundo está
-intocado e ~32 ms depois que o jogador constrói** — medido em jogo real, com o
-`tick` instrumentado: a primeira edição dobra o frame, as seguintes sobem até
-um platô, e o custo fica mesmo depois que se para de editar.
+**O que acontecia.** O Bendcraft renderizava 256² a 7 ms enquanto o mundo
+estava intocado e ~32 ms depois que o jogador construía — medido em jogo real,
+com o `tick` instrumentado: a primeira edição dobrava o frame, as seguintes
+subiam até um platô, e o custo ficava mesmo depois que se parava de editar.
 
-**Por quê.** Em Bend, `Array` é `Type` (dono único) e não pode ser lido pelos
-dois lados de uma chamada paralela, então o mundo compartilhado tem que ser
-uma estrutura `Data` — uma árvore. E um valor boxed compartilhado por todos os
-pixels custa um atômico por uso; nas palavras do autor, no `bend3d.bend`:
-*"a boxed record shared by every vertex is an atomic count per use"*. Todo
-raio toca os nós do topo da árvore a cada travessia de coluna, e os nós do
-topo são os mesmos para os 65 mil raios. Não é bug do demo nem do compilador:
-é o modelo de custo da linguagem hoje, e o próprio autor diz que isso
-"precisa estar no guia".
+**O diagnóstico do dia.** Em Bend, `Array` é `Type` (dono único) e não pode ser
+lido pelos dois lados de uma chamada paralela, então o mundo compartilhado tem
+que ser uma estrutura `Data` — uma árvore. Li o comentário do `bend3d.bend`
+(*"a boxed record shared by every vertex is an atomic count per use"*) como
+"todo uso de um nó compartilhado custa um atômico", concluí que era o modelo
+de custo da linguagem, e abri a
+[bendlang/bend#836](https://github.com/bendlang/bend/issues/836) perguntando
+se uma leitura "emprestada" — usar sem contar — cabia no runtime.
 
-**O que foi tentado, tudo com checksum idêntico provando a mesma imagem:**
+**A resposta.** Já cabia, e o compilador já fazia. Desde o 2.0.10 existe
+`bend guide shaders` (`guide/SHADERS.md`), e a seção *Ownership* dá a regra:
 
-| tentativa | 512² | resultado |
+> The compiler decides borrows; `+` does not. [...] The compiler borrows a
+> boxed parameter (not an `Array`) that the def only matches or passes to a
+> borrower: every read is `term_peek`, no count. It owns one that the def
+> returns, stores in a constructor, or passes to an owner. [...] A def that
+> returns its argument shares it: `Bool.pick(Cloth, c, a, b)` on a tree gave
+> 14 keeps and a hot type. Match the selector and recurse into one field.
+
+Era exatamente o que o Bendcraft fazia. A leitura da coluna escolhia o
+quadrante com `Bool.pick(World, bx, q0, q1)` — uma def que **devolve** o nó
+escolhido. Devolver torna o argumento *owned*, e um valor owned que ainda vai
+ser usado é compartilhado: uma contagem em cada nó, por raio, por travessia de
+coluna. O mundo intocado não pagava porque a raiz era um `WNone` e não havia o
+que escolher; a primeira edição criava `WNode`s e a escolha passava a contar.
+Não era a travessia, era a forma da escolha.
+
+**A correção** (`gfx/05_craft.bend`, commit "Read the world by a borrowed
+recursive walk"). A leitura virou um único `wget` recursivo que faz `match` no
+nível, no nó e nos dois bits do quadrante, e recorre em **um** campo. O
+compilador empresta o nó; no C emitido a def só tem `term_peek`. Duas regras
+da linguagem deram a forma:
+
+- `match` só aceita parâmetros ou variáveis de padrão, nunca uma expressão.
+  Então cada nível passa ao próximo os bits do quadrante já prontos, e a árvore
+  é indexada **do bit baixo para o alto**, para que o próximo par de bits esteja
+  a um `U32.shr` de distância. O `wmod` (escrita, no host, uma vez por edição)
+  segue o mesmo layout.
+- A GPU faz inline de toda def não recursiva. A primeira versão da correção
+  era um walk desenrolado em helpers de quatro braços: 4^5 cópias da folha, e
+  o compilador Metal — que roda **em tempo de execução**, no
+  `MTLCompilerService`, o que dispensa o Metal Toolchain do Xcode — nunca
+  terminou; matei depois de 38 minutos. A versão recursiva compila em segundos
+  e vira um loop no shader.
+
+**Medido.** 256², GPU, sem janela, cinco frames com a câmera girando 0,01 rad
+por frame, checksum por frame; "construído" são 300 blocos colocados num canto
+(`x` 8–23, `z` 10–21, duas alturas). Os dois binários alternados três vezes,
+checksum idêntico nos dez frames em todas as execuções:
+
+| mundo | leitura antiga (`Bool.pick`) | leitura emprestada (`wget`) |
 |---|---|---|
-| todas as colunas na árvore, leitura recursiva | 220 ms | ponto de partida |
-| `Bool.pick` no lugar de um `match` de 4 vias | 183 | 1,2x |
-| empacotar 2×2 colunas por folha | 220 | nada |
-| tirar a base da câmera do laço por pixel | 184 | nada |
-| cachear o nó da região no raio | 192 | nada |
-| desenrolar o walk recursivo | 184 | nada |
-| cache **e** desenrolar juntos | 155 | 1,2x — só pagam juntos |
-| **só as edições na árvore, terreno procedural** | **26** | 6x — mas só sem edições |
-| o mesmo, com 16 edições espalhadas | ~35 (256²) | o custo volta inteiro |
+| intocado | 4–5 ms | 3–4 ms |
+| 300 blocos construídos | 26–27 ms | **6–8 ms** |
 
-A última linha é o limite. O overlay de edições provou onde o custo mora
-(tocar os nós compartilhados do topo por travessia) e, ao mesmo tempo, que
-qualquer edição transforma a raiz num `WNode` e devolve esse custo a todo raio.
+O primeiro frame de cada execução custa 43–54 ms nas duas versões: é a
+compilação do shader mais o aquecimento, descartado. O bitmask de "região
+editada" que eu ia tentar ficou obsoleto sem ser escrito.
 
-**O que ainda não foi tentado.** Um bitmask de "região editada" — 64 regiões
-de 4×4 colunas em dois `U32` — carregado como **escalar** pelo fork, como a
-base da câmera. Raio em região limpa nunca toca a árvore; só as sujas pagam.
-Previsão: ~9 ms nas regiões limpas, ~30 nas sujas, o que para construção
-normal (agrupada num canto) deve ficar perto do intocado. É previsão, não
-medida — e previsões hoje erraram mais de uma vez. Depois disso, o caminho é
-o do `bend3d`: binarizar o mundo por tile de tela antes do render paralelo,
-o que troca o DDA por percorrer uma lista. Reescrita.
+**As outras três issues**, todas respondidas e fechadas (a resposta escrita por
+uma IA, a decisão do Taelin, como as próprias respostas avisam):
 
-**O que resolveria de verdade.** Uma leitura "emprestada" de um `+Data`
-dentro de um `!` — usar sem contar — deixaria o compilador elidir os atômicos
-quando a árvore só é lida e nunca solta dentro do fork. Não sei se cabe no
-modelo do runtime; é a capacidade exata que dissolveria o problema, e é uma
-pergunta para o autor, não uma espera.
+- [#826](https://github.com/bendlang/bend/issues/826) (`--gpu 4GB` "enables the
+  GPU" no guia): corrigido no guia 2.0.13 — a GPU é o padrão, `--gpu off` é o
+  baseline de CPU.
+- [#827](https://github.com/bendlang/bend/issues/827) (`U32.shln` e
+  `U32.from_nat` O(n), primitivas O(1) invisíveis ao grep): **não é o que eu
+  achava.** Num binário compilado `U32.shln`, `U32.shrn`, `U32.from_nat` e
+  `U32.to_nat` são intrínsecas, O(1); o custo O(n) é do **interpretador**
+  (`bend file.bend` roda a definição do Base). Os nomes ficam. Verificado
+  aqui: um laço de 30 M iterações com `U32.shln(acc, n)` e `U32.from_nat(n)`
+  custa 22 ms com `n = 1` e 22 ms com `n = 30`, compilado nativo, no 2.0.9 e
+  no 2.0.16.
+- [#828](https://github.com/bendlang/bend/issues/828) (profundidade do fork: 8x
+  na GPU, nada na CPU): não é bug, são as contas do *lane cube*. Um `!` roda
+  16384 lanes (128×128), então o alvo é **4^7 folhas por `!`**: em 512² com
+  tiles 4×4, 7 níveis enchem o cubo (6 ms), 6 níveis enchem um quarto (14 ms),
+  8–9 custam uma iteração extra do kernel cada. Em 128², 4 níveis ocupam 256
+  lanes de 16384 (234 ms), 5 ocupam 1024 (87), 6 ocupam 4096 (28) — os meus
+  números do Bendcraft, explicados. O pool da CPU é plano porque dez workers se
+  alimentam de qualquer uma dessas contagens. A regra prática entrou no guia em
+  2.0.13.
+- [#836](https://github.com/bendlang/bend/issues/836): a seção *Ownership*
+  acima, o caso do voxel com os números, e a próxima escala — listas planas por
+  tile, construídas no host, como o `bend3d` — mais um ponteiro no fim da seção
+  de paralelismo do guia (2.0.13).
 
-**Registrado upstream.** Este ponto é a [bendlang/bend#836](https://github.com/bendlang/bend/issues/836)
-(o custo de um `+Data` compartilhado dentro de um `!` só está documentado nos
-comentários de um demo; pede um parágrafo na seção de paralelismo do guia, e
-fecha com a pergunta do borrowed read). Os outros achados do dia:
-[#826](https://github.com/bendlang/bend/issues/826) (`--gpu` no guia),
-[#827](https://github.com/bendlang/bend/issues/827) (`U32.shln`/`U32.from_nat`
-O(n) invisíveis ao grep) e
-[#828](https://github.com/bendlang/bend/issues/828) (granularidade do fork:
-8x na GPU, nada na CPU).
-
-Para o que este repo se propôs — mostrar Bend renderizando no Metal e um
-mundo editável bit-exato — 7/32 ms em 256² é bom. Para virar jogo, é onde a
-próxima pessoa começa.
+Para o que este repo se propôs — mostrar Bend renderizando no Metal e um mundo
+editável bit-exato — 3–4 ms intocado e 6–8 ms construído, em 256², é o mundo
+editável custando quase o mesmo que o procedural, que era a expectativa. Para
+uma cena mais pesada o guia diz por onde: listas por tile no host.
 
 ## Publicado no BendHub
 
