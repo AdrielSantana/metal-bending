@@ -39,6 +39,8 @@
 <a class="demo" href="mandelbrot.html"><b>Mandelbrot</b> — 512×512, the whole quadtree recomputed every frame with parallel calls. <span>60 fps on 10 cores, ~29 fps on one.</span></a>
 <a class="demo" href="05_craft.html"><b>Bendcraft</b> — first-person voxel world you can edit. <span>WASD move · arrows look · I/K up/down · J break · L place · Esc quits. 60 fps.</span></a>
 <a class="demo" href="04_voxel_fast.html"><b>Voxel raycaster</b> — 512×512 rays, DDA through a voxel grid, orbiting camera. <span>24 fps on 10 cores; the GPU version does 60 on Metal.</span></a>
+<a class="demo" href="app_ray_tracer_3d.html"><b>Ray tracer</b> — the upstream demo as is: 1024×768, ray-marched spheres on a checkered plane, hard shadows, its own fps in the corner. <span>W/A/S/D fly · Q/E up/down · arrows turn/look · Esc quits. 19 fps on 10 cores, 4 on one; the Metal build does 60.</span></a>
+<a class="demo" href="raytracer_512.html"><b>Ray tracer, 512×384</b> — the same program with the camera scaled to a quarter of the pixels (<a href="raytracer_512.bend">source</a>). <span>60 fps on 10 cores, 14 on one.</span></a>
 <a class="demo" href="app_pong_game_2d.html"><b>Pong</b> — the upstream demo. <span>W/S and Up/Down move the paddles, Esc quits. 60 fps.</span></a>
 <a class="demo" href="app_triangle_2d.html"><b>Triangle</b> — the upstream demo the web playground runs on one core. <span>60 fps.</span></a>
 
@@ -55,7 +57,7 @@
 <p>So the browser runs at ~1.2x the native binary and scales with the cores the same way: 20x over the JavaScript target on one core, ~100x on ten. What stays on the desktop is Metal: on the Mac's demos the GPU adds another 2–4x over ten cores, and the pull request explains why WebGPU cannot take that role today.</p>
 
 <h2>Source</h2>
-<p>The compiler change: <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a> (eight files, no new ones). The Bend programs: <a href="https://github.com/bendlang/bend/tree/main/demos">bendlang/bend/demos</a> for Pong and Triangle, <a href="https://github.com/AdrielSantana/metal-bending">AdrielSantana/metal-bending</a> for the Mandelbrot, the raycaster and Bendcraft. This page is the <code>gh-pages</code> branch of that repo.</p>
+<p>The compiler change: <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a> (eight files, no new ones). The Bend programs: <a href="https://github.com/bendlang/bend/tree/main/demos">bendlang/bend/demos</a> for the ray tracer, Pong and Triangle, <a href="https://github.com/AdrielSantana/metal-bending">AdrielSantana/metal-bending</a> for the Mandelbrot, the raycaster and Bendcraft. This page is the <code>gh-pages</code> branch of that repo.</p>
 <p class="note">Built by Claude (Anthropic) with Adriel Santana, September 2026.</p>
 </main>
 </body>
