@@ -531,6 +531,29 @@ ganhou a correção dos números.
 | `dda(60n, ...)` (desenrolado) | 13 ms | 26 ms |
 | `dda(U32.to_nat(60), ...)` (loop) | **6 ms** | **17 ms** |
 
+**O que mais foi medido no custo base**, cada linha com os dez checksums
+idênticos, o timer só em volta do `!` (a soma do checksum no host custa 0–1 ms
+e foi tirada da conta):
+
+| variante, 512², Metal | intocado | 300 blocos |
+|---|---|---|
+| como está (`U32.to_nat(60)`) | 6 ms | 17 ms |
+| a cor do hit só quando há hit (`match`, não `Bool.pick`) | **5–6** | **16–17** |
+| `Bool.pick` de escalares trocado por `match` no DDA | 6 | 17 |
+| nunca colapsar o tile 2×2 (5 alocações por tile) / sempre colapsar (1) | 6 / 6 | 17 / 17 |
+| C emitido recompilado com `fast::sin/cos/sqrt` no lugar de `precise::` | **4** | **15** |
+| idem, mais `MTLMathModeFast` no lugar de `MTLMathModeSafe` | 3–4 | 14–16 |
+| só `MTLMathModeFast`, com `precise::` | 6 (e muda um frame) | 17 |
+
+A cor preguiçosa entrou no repo (é o idioma do `refetch`). O `Bool.pick` com
+`term_sink` do ramo descartado, que parecia caro no C, o compilador Metal
+elimina. As alocações da imagem não custam nada. O que custa é a trigonometria
+`precise::` que o runtime força no shader (um terço do frame intocado, com a
+mesma imagem nas duas versões aqui) — e vale saber que o Chrome compila o WGSL
+da página com fast math ligado por padrão, então o 1,3 ms do shader à mão teve
+essa vantagem. Isso é escolha do runtime, não do programa: uma pergunta para o
+Taelin.
+
 O que sobra no mundo construído é a travessia em si, cinco leituras dependentes
 por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
 por tile do guia. No browser, em WebAssembly, 512² faz 20 fps em dez threads
