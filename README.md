@@ -12,7 +12,7 @@ CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
 ## Setup
 
-Bend **2.0.9** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
+Bend **2.0.16** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
 (o instalador escreveu em `~/.zshrc`). Precisa de um shell novo, ou:
 
 ```sh
@@ -490,7 +490,10 @@ checksum idêntico nos dez frames em todas as execuções:
 | 300 blocos construídos | 26–27 ms | **6–8 ms** |
 
 O primeiro frame de cada execução custa 43–54 ms nas duas versões: é a
-compilação do shader mais o aquecimento, descartado. O bitmask de "região
+compilação do shader mais o aquecimento, descartado. Medido no 2.0.9; depois
+do update para o 2.0.16, os mesmos dez checksums e os mesmos tempos (4 ms
+intocado, 6–8 construído; a primeira execução com o binário novo custa mais,
+enquanto o shader recompila). O bitmask de "região
 editada" que eu ia tentar ficou obsoleto sem ser escrito.
 
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
