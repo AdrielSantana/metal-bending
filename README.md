@@ -306,7 +306,7 @@ porque está errado.
 
 ## Bendcraft: mundo editável
 
-`gfx/05_craft.bend` — primeira pessoa, voo livre, quebrar e colocar bloco.
+`gfx/05_craft.bend` — primeira pessoa, voo livre, quebrar e colocar bloco, 512×512.
 
 ```sh
 bend gfx/05_craft.bend -o build/craft
@@ -362,8 +362,8 @@ raio toca um nó (`WNone`) e calcula o resto. Na hora eu atribuí o custo a "um
 atômico por uso" de um valor compartilhado, a regra que tinha lido no
 `bend3d.bend`; a causa real é mais estreita e está em "Onde isto parava".
 
-O demo agora renderiza a **256²** (7 ms com o mundo intocado; era 39 com a
-árvore cheia). Em 128², ao longo da sessão: 234 → 6 ms. A edição segue
+Nesse ponto o demo renderizava a **256²** (7 ms com o mundo intocado; era 39
+com a árvore cheia). Em 128², ao longo da sessão: 234 → 6 ms. A edição segue
 bit-exata: checksum do mundo vazio `102282128` (idêntico ao da árvore antiga),
 quebrar/colocar dá exatamente ±2^y nos três caminhos do `wmod` novo, e o leitor
 recursivo do picking concorda com o desenrolado do render.
@@ -493,8 +493,24 @@ O primeiro frame de cada execução custa 43–54 ms nas duas versões: é a
 compilação do shader mais o aquecimento, descartado. Medido no 2.0.9; depois
 do update para o 2.0.16, os mesmos dez checksums e os mesmos tempos (4 ms
 intocado, 6–8 construído; a primeira execução com o binário novo custa mais,
-enquanto o shader recompila). O bitmask de "região
-editada" que eu ia tentar ficou obsoleto sem ser escrito.
+enquanto o shader recompila). O bitmask de "região editada" que eu ia tentar
+ficou obsoleto sem ser escrito.
+
+Com a leitura emprestada o demo subiu para **512²**, que é o que ele mostra
+hoje (a 256² ficava pixelado). Mesma medição, mesma forma de fork nos dois
+binários, checksums idênticos:
+
+| 512² | leitura antiga | leitura emprestada |
+|---|---|---|
+| intocado | 15 ms | 13 ms |
+| 300 blocos construídos | 100–110 ms | **25–29 ms** |
+
+A forma do fork seguiu a regra do guia (4^7 folhas por `!`): 7 níveis sobre
+tiles 4×4 dão 13 / 26 ms; 8 níveis sobre tiles 2×2, 17 / 38, mesma imagem. O
+que sobra no mundo construído é a travessia em si, cinco leituras dependentes
+por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
+por tile do guia. No browser, em WebAssembly, 512² faz 20 fps em dez threads
+e 5 em uma; a página de 256² continua no site, a 60.
 
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
 uma IA, a decisão do Taelin, como as próprias respostas avisam):
@@ -525,8 +541,8 @@ uma IA, a decisão do Taelin, como as próprias respostas avisam):
   de paralelismo do guia (2.0.13).
 
 Para o que este repo se propôs — mostrar Bend renderizando no Metal e um mundo
-editável bit-exato — 3–4 ms intocado e 6–8 ms construído, em 256², é o mundo
-editável custando quase o mesmo que o procedural, que era a expectativa. Para
+editável bit-exato — 13 ms intocado e 26 ms construído em 512² (3–4 e 6–8 em
+256²) é o mundo editável custando perto do procedural, que era a expectativa. Para
 uma cena mais pesada o guia diz por onde: listas por tile no host.
 
 ## Publicado no BendHub
