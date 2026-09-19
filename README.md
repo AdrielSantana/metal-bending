@@ -509,8 +509,27 @@ binários, checksums idênticos:
 | 300 blocos construídos | 100–110 ms | **25–29 ms** |
 
 A forma do fork seguiu a regra do guia (4^7 folhas por `!`): 7 níveis sobre
-tiles 4×4 dão 13 / 26 ms; 8 níveis sobre tiles 2×2, 17 / 38, mesma imagem. O
-que sobra no mundo construído é a travessia em si, cinco leituras dependentes
+tiles 4×4 dão 13 / 26 ms; 8 níveis sobre tiles 2×2, 17 / 38, mesma imagem.
+
+**Segunda armadilha, achada medindo o frame por partes.** Só o esqueleto do
+runtime (fork, join, quadtree, raster, todo pixel é céu) custa 1–2 ms; o raio
+sem árvore nenhuma, 9–10; com a árvore, 13. Ou seja, o raio em si custava 8 ms,
+e o shader WGSL da versão WebGPU faz o mesmo raio em ~1. No C emitido a causa
+estava à vista: `dda(60n, ...)`, o combustível como literal, é **desenrolado
+60 vezes** pelo compilador — uma função de 13.913 linhas sem loop, 787
+chamadas ao `Bool.pick` genérico e 944 `term_keep`. Com o combustível como
+valor em tempo de execução, `dda(U32.to_nat(60), ...)`, o `dda` volta a ser um
+loop (7.053 linhas no programa inteiro, 6 keeps) e o frame cai pela metade;
+`def fuel() -> Nat: 60n` é inlinado e desenrola igual. Nenhum dos guias fala
+disso, e o GUIDE ensina o combustível `Nat` como a forma de escrever um loop
+limitado.
+
+| 512², Metal, leitura emprestada | intocado | 300 blocos construídos |
+|---|---|---|
+| `dda(60n, ...)` (desenrolado) | 13 ms | 26 ms |
+| `dda(U32.to_nat(60), ...)` (loop) | **6 ms** | **17 ms** |
+
+O que sobra no mundo construído é a travessia em si, cinco leituras dependentes
 por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
 por tile do guia. No browser, em WebAssembly, 512² faz 20 fps em dez threads
 e 5 em uma; a página de 256² continua no site, a 60.
@@ -522,7 +541,7 @@ não editada é a função do terreno na GPU, como no `WNone`. O frame custa
 **1,3 ms intocado e 1,4 ms com os 300 blocos**, e o checksum do frame (a soma
 do `total(9n)`, contando o tile 2×2 colapsado uma vez) é **igual ao do Bend
 nos dois mundos**: 751552256 e 351470114. Ou seja, a mesma imagem, e a parte
-que sobra no Bend (13 → 26 ms) é só a leitura da árvore: um buffer plano que
+que sobra no Bend (6 → 17 ms) é só a leitura da árvore: um buffer plano que
 as lanes pudessem emprestar dissolveria o custo, e é o que um `Array` num `!`
 não permite hoje ("a boxed parameter (not an `Array`)", diz o guia). A
 pergunta está na [bendlang/bend#885](https://github.com/bendlang/bend/issues/885):
@@ -559,8 +578,9 @@ uma IA, a decisão do Taelin, como as próprias respostas avisam):
   de paralelismo do guia (2.0.13).
 
 Para o que este repo se propôs — mostrar Bend renderizando no Metal e um mundo
-editável bit-exato — 13 ms intocado e 26 ms construído em 512² (3–4 e 6–8 em
-256²) é o mundo editável custando perto do procedural, que era a expectativa. Para
+editável bit-exato — 6 ms intocado e 17 ms construído em 512² é o mundo
+editável a um passo do procedural, que era a expectativa; o passo que falta
+está na #885. Para
 uma cena mais pesada o guia diz por onde: listas por tile no host.
 
 ## Publicado no BendHub
