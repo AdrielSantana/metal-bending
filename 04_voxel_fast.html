@@ -2,47 +2,43 @@
 <meta charset="utf-8">
 <title>04_voxel_fast</title>
 <style>
-  body { margin: 0; padding: 16px; background: #111; color: #ccc; display: flex;
+  body { margin: 16px; background: #111; color: #ccc; display: flex;
     flex-direction: column; align-items: center; gap: 12px;
     font: 14px/1.4 ui-monospace, monospace; }
-  canvas { max-width: 100%; image-rendering: pixelated; outline: none; }
+  canvas { max-width: 100%; image-rendering: pixelated; }
   pre { margin: 0; white-space: pre-wrap; max-width: 100%; }
   select { font: inherit; color: inherit; background: #222; border: 1px solid #444; }
 </style>
 <canvas id="bend"></canvas>
-<pre id="bend-fps"><select id="bend-threads"></select> threads, <span id="bend-rate"></span></pre>
+<pre><select id="bend-threads"></select> threads, <span id="bend-rate"></span></pre>
 <pre id="bend-out"></pre>
 <script>
-  // ?threads=N runs on N cores (the selector reloads with it). The page
-  // needs the headers Cross-Origin-Opener-Policy: same-origin and
-  // Cross-Origin-Embedder-Policy: require-corp for its threads.
-  var threads = new URLSearchParams(location.search).get("threads");
-  var cores   = navigator.hardwareConcurrency || 4;
+  var cores   = navigator.hardwareConcurrency;
+  var threads = Math.min(Number(new URLSearchParams(location.search)
+    .get("threads")) || cores, cores);
   var select  = document.getElementById("bend-threads");
   for (var i = 1; i <= cores; i += 1) {
     select.appendChild(new Option(i, i));
   }
-  select.value = threads || cores;
+  select.value = threads;
   select.onchange = function() { location.search = "?threads=" + select.value; };
-  var bendSay = function(text) {
-    document.getElementById("bend-out").textContent += text + "\n";
+  var say = function(text) {
+    document.getElementById("bend-out").append(text + "\n");
   };
   var Module = {
-    arguments: threads === null ? [] : ["--threads", threads],
-    print: bendSay,
-    printErr: bendSay,
-    onExit: function(code) { bendSay("exit " + code); },
+    arguments: ["--threads", String(threads)],
+    print: say,
+    printErr: say,
+    onExit: function(code) { say("exit " + code); },
   };
   if (!crossOriginIsolated) {
-    bendSay("no threads: the page needs the Cross-Origin-Opener-Policy: "
+    say("no threads: the page needs the Cross-Origin-Opener-Policy: "
       + "same-origin and Cross-Origin-Embedder-Policy: require-corp headers");
   }
   var frames = 0;
   setInterval(function() {
     var n = Module.bendFrames | 0;
-    if (n !== frames) {
-      document.getElementById("bend-rate").textContent = (n - frames) + " fps";
-    }
+    document.getElementById("bend-rate").textContent = (n - frames) + " fps";
     frames = n;
   }, 1000);
 </script>
