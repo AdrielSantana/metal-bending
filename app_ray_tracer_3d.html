@@ -10,7 +10,7 @@
   select { font: inherit; color: inherit; background: #222; border: 1px solid #444; }
 </style>
 <canvas id="bend"></canvas>
-<pre><select id="bend-threads"></select> threads, <span id="bend-rate"></span></pre>
+<pre>on <select id="bend-threads"></select>, <span id="bend-rate"></span></pre>
 <pre id="bend-out"></pre>
 <script>
   var cores   = navigator.hardwareConcurrency;
@@ -41,6 +41,17 @@
     document.getElementById("bend-rate").textContent = (n - frames) + " fps";
     frames = n;
   }, 1000);
+</script>
+<!-- mode selector -->
+<script>
+  // this demo also runs on WebGPU (gpu_raytracer.html); the same selector switches to it
+  for (var o = 0; o < select.options.length; o += 1) {
+    select.options[o].text = select.options[o].value + (select.options[o].value == 1 ? " thread" : " threads");
+  }
+  select.appendChild(new Option("WebGPU", "gpu"));
+  select.onchange = function() {
+    location.href = select.value == "gpu" ? "gpu_raytracer.html" : "?threads=" + select.value;
+  };
 </script>
 <script src="coi-serviceworker.js"></script>
 <script src="app_ray_tracer_3d.js"></script>

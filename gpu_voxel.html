@@ -1,6 +1,13 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Voxel raycaster (Bend on WebGPU)</title>
-<style>.note{color:#7a8798;font-size:13px;margin:8px;max-width:760px}body{margin:0;background:#0b0e14;color:#c9d4e3;font:14px ui-monospace,Menlo,monospace}canvas{display:block}pre{margin:8px;white-space:pre-wrap;word-break:break-all}a{color:#59e3ff}</style></head>
-<body><canvas id="bend" tabindex="0"></canvas><pre id="bend-fps">starting on the GPU…</pre><pre id="bend-out"></pre>
+<style>.note{color:#7a8798;font-size:13px;margin:8px;max-width:760px}body{margin:0;background:#0b0e14;color:#c9d4e3;font:14px ui-monospace,Menlo,monospace}canvas{display:block}pre{margin:8px;white-space:pre-wrap;word-break:break-all}a{color:#59e3ff}select{font:inherit;color:inherit;background:#222;border:1px solid #444}</style></head>
+<body><canvas id="bend" tabindex="0"></canvas><pre>on <select id="bend-threads"></select>, <span id="bend-fps">starting on the GPU…</span></pre><!-- mode selector -->
+<script>
+  // the same selector as the CPU page: the threads entries go back to it
+  var select = document.getElementById("bend-threads"), cores = navigator.hardwareConcurrency;
+  select.appendChild(new Option("WebGPU", "gpu"));
+  for (var i = 1; i <= cores; i += 1) select.appendChild(new Option(i + (i == 1 ? " thread" : " threads"), i));
+  select.onchange = function() { if (select.value != "gpu") location.href = ("04_voxel_fast.html") + "?threads=" + select.value; };
+</script><pre id="bend-out"></pre>
 <p class="note">Voxel raycaster 512×512 on WebGPU: <code>fork!(7n)</code> down to 4×4 tiles, a DDA of 96 steps per ray, the 2×2 collapse kept. The CPU page does 24 fps on ten cores. Numbers and the how on the <a href="index.html">index</a>.</p>
 <script type="module">
 import { page } from "./page.js";
