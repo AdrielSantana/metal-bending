@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bend in the browser</title>
+<style>
+  :root { --bg: #0b0e14; --panel: #11151f; --line: #1e2533; --text: #c9d4e3; --dim: #7a8798; --gold: #ffd25e; --cyan: #59e3ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px 48px; background: var(--bg); color: var(--text);
+    font: 15px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: 3px; color: var(--gold); margin: 0 0 6px; }
+  h2 { font-size: 15px; letter-spacing: 2px; color: var(--cyan); text-transform: uppercase; margin: 36px 0 12px; }
+  p { margin: 0 0 12px; }
+  a { color: var(--cyan); }
+  code { color: var(--gold); }
+  .lead { color: var(--dim); margin-bottom: 20px; }
+  .demo { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 16px; margin: 10px 0; text-decoration: none; color: inherit; }
+  .demo:hover { border-color: var(--cyan); }
+  .demo b { color: var(--gold); font-weight: normal; }
+  .demo span { color: var(--dim); }
+  table { border-collapse: collapse; margin: 8px 0 16px; width: 100%; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: normal; }
+  td:not(:first-child), th:not(:first-child) { text-align: right; }
+  .note { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>BEND IN THE BROWSER</h1>
+<p class="lead">Bend programs running on every core of your machine, inside a web page. No GPU, no JavaScript backend: the same C runtime a native binary uses, compiled to WebAssembly.</p>
+
+<p>Each demo below is a <code>.bend</code> file built with <code>bend file.bend -o file.html</code> from <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a>: Emscripten compiles Bend's C runtime with <code>-pthread -mtail-call</code>, so the fork-join scheduler runs on a Web Worker per core and the segment machine's tail calls become wasm tail calls. A <code>Window</code> draws on a canvas, paced by the display; the line under it counts the frames the Bend program delivered. Add <code>?threads=1</code> to any demo to see what the cores buy.</p>
+
+<h2>Demos</h2>
+<a class="demo" href="mandelbrot.html"><b>Mandelbrot</b> — 512×512, the whole quadtree recomputed every frame with parallel calls. <span>60 fps on 10 cores, ~29 fps on one.</span></a>
+<a class="demo" href="05_craft.html"><b>Bendcraft</b> — first-person voxel world you can edit. <span>WASD move · arrows look · I/K up/down · J break · L place · Esc quits. 60 fps.</span></a>
+<a class="demo" href="04_voxel_fast.html"><b>Voxel raycaster</b> — 512×512 rays, DDA through a voxel grid, orbiting camera. <span>24 fps on 10 cores; the GPU version does 60 on Metal.</span></a>
+<a class="demo" href="app_pong_game_2d.html"><b>Pong</b> — the upstream demo. <span>W/S and Up/Down move the paddles, Esc quits. 60 fps.</span></a>
+<a class="demo" href="app_triangle_2d.html"><b>Triangle</b> — the upstream demo the web playground runs on one core. <span>60 fps.</span></a>
+
+<p class="note">Needs a browser with SharedArrayBuffer and wasm tail calls: Chrome 112+, Firefox 121+, Safari 18.2+. Measured on Chrome 153 on an Apple M5 (10 cores). GitHub Pages sends no COOP/COEP headers, so a small service worker (<a href="https://github.com/gzuidhof/coi-serviceworker">coi-serviceworker</a>) adds them and reloads the page once on your first visit.</p>
+
+<h2>Numbers</h2>
+<p>A windowless 512×512 Mandelbrot, 50 iterations, summed to a checksum; time around the computation only, median of five frames. Same checksum in every cell.</p>
+<table>
+<tr><th>ms per frame</th><th>1 thread</th><th>4 threads</th><th>10 threads</th></tr>
+<tr><td>JavaScript target (bun), what the web had</td><td>530</td><td>–</td><td>–</td></tr>
+<tr><td>WebAssembly in Chrome</td><td>26</td><td>7–8</td><td>4–5</td></tr>
+<tr><td>Native binary (clang)</td><td>22</td><td>6</td><td>6</td></tr>
+</table>
+<p>So the browser runs at ~1.2x the native binary and scales with the cores the same way: 20x over the JavaScript target on one core, ~100x on ten. What stays on the desktop is Metal: on the Mac's demos the GPU adds another 2–4x over ten cores, and the pull request explains why WebGPU cannot take that role today.</p>
+
+<h2>Source</h2>
+<p>The compiler change: <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a> (eight files, no new ones). The Bend programs: <a href="https://github.com/bendlang/bend/tree/main/demos">bendlang/bend/demos</a> for Pong and Triangle, <a href="https://github.com/AdrielSantana/metal-bending">AdrielSantana/metal-bending</a> for the Mandelbrot, the raycaster and Bendcraft. This page is the <code>gh-pages</code> branch of that repo.</p>
+<p class="note">Built by Claude (Anthropic) with Adriel Santana, September 2026.</p>
+</main>
+</body>
+</html>
