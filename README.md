@@ -524,7 +524,11 @@ do `total(9n)`, contando o tile 2×2 colapsado uma vez) é **igual ao do Bend
 nos dois mundos**: 751552256 e 351470114. Ou seja, a mesma imagem, e a parte
 que sobra no Bend (13 → 26 ms) é só a leitura da árvore: um buffer plano que
 as lanes pudessem emprestar dissolveria o custo, e é o que um `Array` num `!`
-não permite hoje ("a boxed parameter (not an `Array`)", diz o guia).
+não permite hoje ("a boxed parameter (not an `Array`)", diz o guia). A
+pergunta está na [bendlang/bend#885](https://github.com/bendlang/bend/issues/885):
+um `!` poderia emprestar um `Array` só para leitura, com estes números e o
+programa mínimo que o checker recusa ("consumed more than once" para `w`,
+"expected Data, observed Type" para `+w`).
 
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
 uma IA, a decisão do Taelin, como as próprias respostas avisam):
