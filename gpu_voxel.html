@@ -1,0 +1,111 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Voxel raycaster (Bend on WebGPU)</title>
+<style>.note{color:#7a8798;font-size:13px;margin:8px;max-width:760px}body{margin:0;background:#0b0e14;color:#c9d4e3;font:14px ui-monospace,Menlo,monospace}canvas{display:block}pre{margin:8px;white-space:pre-wrap;word-break:break-all}a{color:#59e3ff}</style></head>
+<body><canvas id="bend" tabindex="0"></canvas><pre id="bend-fps">starting on the GPU…</pre><pre id="bend-out"></pre>
+<p class="note">Voxel raycaster 512×512 on WebGPU: <code>fork!(7n)</code> down to 4×4 tiles, a DDA of 96 steps per ray, the 2×2 collapse kept. The CPU page does 24 fps on ten cores. Numbers and the how on the <a href="index.html">index</a>.</p>
+<script type="module">
+import { page } from "./page.js";
+// gfx/04_voxel_fast.bend: fork!(7n, 0, 0, a) down to 4x4 tiles, t4 -> t2 -> pixel -> trace -> run_dda -> dda(96n)
+const WGSL = `
+fn root_args() -> array<vec2<u32>, 3> { return array<vec2<u32>, 3>(imm(0u), imm(0u), imm(uv(0u))); }
+fn kid_s(j: u32, s: vec2<u32>) -> vec2<u32> { return s; }
+fn kid(i: u32, j: u32, x: vec2<u32>, y: vec2<u32>, s: vec2<u32>) -> array<vec2<u32>, 2> {
+  let h = 4u << j; return array<vec2<u32>, 2>(imm(x.x + select(0u, h, (i & 1u) == 1u)), imm(y.x + select(0u, h, i >= 2u)));
+}
+fn floorf(x: f32) -> f32 { return f32(u32(x)); }
+fn absf(x: f32) -> f32 { return max(x, 0.0 - x); }
+fn p2f(p: u32) -> f32 { return f32(p) * 0.00390625 - 1.0; }
+fn height(vx: f32, vz: f32) -> f32 { return floorf(8.0 + 3.0 * sin(vx * 0.26) + 2.5 * cos(vz * 0.19)); }
+fn solid(vx: f32, vy: f32, vz: f32) -> bool { return vx > 23.0 && vx < 56.0 && vz > 23.0 && vz < 56.0 && vy > (0.0 - 1.0) && vy < height(vx, vz); }
+fn voxel_color(vy: f32, vx: f32, vz: f32) -> u32 { let h = height(vx, vz); return select(select(rgb(130u, 130u, 130u), rgb(134u, 96u, 67u), vy > h - 4.0), rgb(117u, 176u, 73u), vy > h - 2.0); }
+fn scale(c: u32, k: f32) -> u32 { return u32(f32(c) * k); }
+fn dim(c: u32, k: f32) -> u32 { let r = c / 65536u; let g = c / 256u % 256u; let bb = c % 256u; return rgb(scale(r, k), scale(g, k), scale(bb, k)); }
+fn lit(vy: f32, vx: f32, vz: f32, axis: f32) -> u32 { let k = select(select(0.48, 1.0, axis < 1.5), 0.68, axis < 0.5); return dim(voxel_color(vy, vx, vz), k); }
+fn sky_at(yq: u32) -> u32 { let g = yq * 55u / 512u; return rgb(110u + g, 150u + g, 235u); }
+fn band(y: u32) -> u32 { return y / 8u * 8u; }
+fn dda(vx0: f32, vy0: f32, vz0: f32, sx: f32, sy: f32, sz: f32, mx0: f32, my0: f32, mz0: f32, ex: f32, ey: f32, ez: f32) -> u32 {
+  var vx = vx0; var vy = vy0; var vz = vz0; var mx = mx0; var my = my0; var mz = mz0; var axis = 1.0; var col = 0u;
+  for (var i = 0u; i < 96u; i++) {
+    let here = solid(vx, vy, vz) && (col < 1u);
+    let ncol = select(col, lit(vy, vx, vz, axis), here);
+    let ux = (mx < my) && (mx < mz);
+    let uy = select(my < mz, false, ux);
+    let nvx = select(vx, vx + sx, ux); let nvy = select(vy, vy + sy, uy); let nvz = select(select(vz + sz, vz, uy), vz, ux);
+    let nmx = select(mx, mx + ex, ux); let nmy = select(my, my + ey, uy); let nmz = select(select(mz + ez, mz, uy), mz, ux);
+    let naxis = select(select(2.0, 1.0, uy), 0.0, ux);
+    vx = nvx; vy = nvy; vz = nvz; mx = nmx; my = nmy; mz = nmz; axis = naxis; col = ncol;
+  }
+  return col;
+}
+fn run_dda(ox: f32, oy: f32, oz: f32, dx: f32, dy: f32, dz: f32, v: u32) -> u32 {
+  let vx = floorf(ox); let vy = floorf(max(oy, 0.0)); let vz = floorf(oz);
+  let px = dx > 0.0; let py = dy > 0.0; let pz = dz > 0.0;
+  let ax = max(absf(dx), 0.00001); let ay = max(absf(dy), 0.00001); let az = max(absf(dz), 0.00001);
+  let nx = select(ox - vx, vx + 1.0 - ox, px); let ny = select(oy - vy, vy + 1.0 - oy, py); let nz = select(oz - vz, vz + 1.0 - oz, pz);
+  let c = dda(vx, vy, vz, select(0.0 - 1.0, 1.0, px), select(0.0 - 1.0, 1.0, py), select(0.0 - 1.0, 1.0, pz), nx / ax, ny / ay, nz / az, 1.0 / ax, 1.0 / ay, 1.0 / az);
+  return select(c, sky_at(v), c < 1u);
+}
+fn trace(ox: f32, oy: f32, oz: f32, dx: f32, dy: f32, dz: f32, v: u32) -> u32 {
+  let rx = 1.0 / max(absf(dx), 0.00001) * select(0.0 - 1.0, 1.0, dx > 0.0);
+  let ry = 1.0 / max(absf(dy), 0.00001) * select(0.0 - 1.0, 1.0, dy > 0.0);
+  let rz = 1.0 / max(absf(dz), 0.00001) * select(0.0 - 1.0, 1.0, dz > 0.0);
+  let xa = (24.0 - ox) * rx; let xb = (56.0 - ox) * rx; let ya = (0.0 - oy) * ry; let yb = (17.0 - oy) * ry; let za = (24.0 - oz) * rz; let zb = (56.0 - oz) * rz;
+  let tin = max(max(min(xa, xb), min(ya, yb)), max(min(za, zb), 0.0));
+  let tout = min(min(max(xa, xb), max(ya, yb)), max(za, zb));
+  let s = tin + 0.002;
+  if (tin < tout) { return run_dda(ox + dx * s, oy + dy * s, oz + dz * s, dx, dy, dz, v); }
+  return sky_at(v);
+}
+fn pixel(pxi: u32, pyi: u32, a: f32) -> u32 {
+  let u = p2f(pxi); let v = p2f(pyi);
+  let ex = 40.0 + 30.0 * cos(a); let ey = 23.0; let ez = 40.0 + 30.0 * sin(a);
+  let fl = sqrt((40.0 - ex) * (40.0 - ex) + (7.0 - ey) * (7.0 - ey) + (40.0 - ez) * (40.0 - ez));
+  let fx = (40.0 - ex) / fl; let fy = (7.0 - ey) / fl; let fz = (40.0 - ez) / fl;
+  let rl = sqrt(fz * fz + 0.0 * 0.0 + (0.0 - fx) * (0.0 - fx));
+  let rx = fz / rl; let rz = (0.0 - fx) / rl;
+  let ux = 0.0 - rz * fy; let uy = rz * fx - rx * fz; let uz = rx * fy;
+  let dx = fx + 0.85 * u * rx + 0.85 * v * ux; let dy = fy + 0.85 * v * uy; let dz = fz + 0.85 * u * rz + 0.85 * v * uz;
+  let n = sqrt(dx * dx + dy * dy + dz * dz);
+  return trace(ex, ey, ez, dx / n, dy / n, dz / n, band(pyi));
+}
+fn t2(x: u32, y: u32, a: f32) -> vec2<u32> {
+  let k0 = pixel(x, y, a); let k1 = pixel(x + 1u, y, a); let k2 = pixel(x, y + 1u, a); let k3 = pixel(x + 1u, y + 1u, a);
+  if (k0 == k1 && k1 == k2 && k2 == k3) { let l = alloc(1u); st(l, imm(k0)); return mk(TAG_CTR, CID_PIX, l); }
+  let p = alloc(4u); st(p, imm(k0)); st(p + 1u, imm(k1)); st(p + 2u, imm(k2)); st(p + 3u, imm(k3));
+  let qq = alloc(4u); for (var i = 0u; i < 4u; i++) { st(qq + i, mk(TAG_CTR, CID_PIX, p + i)); }
+  return mk(TAG_CTR, CID_QUA, qq);
+}
+fn leaf(x: vec2<u32>, y: vec2<u32>, s: vec2<u32>) -> vec2<u32> {
+  let a = f(s.x); let qq = alloc(4u);
+  st(qq, t2(x.x, y.x, a)); st(qq + 1u, t2(x.x + 2u, y.x, a)); st(qq + 2u, t2(x.x, y.x + 2u, a)); st(qq + 3u, t2(x.x + 2u, y.x + 2u, a));
+  return mk(TAG_CTR, CID_QUA, qq);
+}`;
+// the same pixel function in JS (doubles), for the check
+const floorf = (x) => x < 0 ? 0 : Math.trunc(x), absf = (x) => Math.max(x, -x), rgb = (r, g, b) => r * 65536 + g * 256 + b;
+const height = (vx, vz) => floorf(8 + 3 * Math.sin(vx * 0.26) + 2.5 * Math.cos(vz * 0.19));
+const solid = (vx, vy, vz) => vx > 23 && vx < 56 && vz > 23 && vz < 56 && vy > -1 && vy < height(vx, vz);
+const vcolor = (vy, vx, vz) => { const h = height(vx, vz); return vy > h - 2 ? rgb(117, 176, 73) : vy > h - 4 ? rgb(134, 96, 67) : rgb(130, 130, 130); };
+const scale = (c, k) => Math.trunc(c * k), dim = (c, k) => rgb(scale(Math.floor(c / 65536), k), scale(Math.floor(c / 256) % 256, k), scale(c % 256, k));
+const lit = (vy, vx, vz, axis) => dim(vcolor(vy, vx, vz), axis < 0.5 ? 0.68 : axis < 1.5 ? 1.0 : 0.48);
+const sky = (yq) => { const g = Math.floor(yq * 55 / 512); return rgb(110 + g, 150 + g, 235); };
+function dda(vx, vy, vz, sx, sy, sz, mx, my, mz, ex, ey, ez) { let axis = 1, col = 0;
+  for (let i = 0; i < 96; i++) { const here = solid(vx, vy, vz) && col < 1; const ncol = here ? lit(vy, vx, vz, axis) : col;
+    const ux = mx < my && mx < mz, uy = ux ? false : my < mz;
+    const nvx = ux ? vx + sx : vx, nvy = uy ? vy + sy : vy, nvz = ux ? vz : uy ? vz : vz + sz, nmx = ux ? mx + ex : mx, nmy = uy ? my + ey : my, nmz = ux ? mz : uy ? mz : mz + ez;
+    axis = ux ? 0 : uy ? 1 : 2; vx = nvx; vy = nvy; vz = nvz; mx = nmx; my = nmy; mz = nmz; col = ncol; }
+  return col; }
+function runDda(ox, oy, oz, dx, dy, dz, v) { const vx = floorf(ox), vy = floorf(Math.max(oy, 0)), vz = floorf(oz), px = dx > 0, py = dy > 0, pz = dz > 0;
+  const ax = Math.max(absf(dx), 1e-5), ay = Math.max(absf(dy), 1e-5), az = Math.max(absf(dz), 1e-5);
+  const nx = px ? vx + 1 - ox : ox - vx, ny = py ? vy + 1 - oy : oy - vy, nz = pz ? vz + 1 - oz : oz - vz;
+  const c = dda(vx, vy, vz, px ? 1 : -1, py ? 1 : -1, pz ? 1 : -1, nx / ax, ny / ay, nz / az, 1 / ax, 1 / ay, 1 / az); return c < 1 ? sky(v) : c; }
+function trace(ox, oy, oz, dx, dy, dz, v) { const rx = 1 / Math.max(absf(dx), 1e-5) * (dx > 0 ? 1 : -1), ry = 1 / Math.max(absf(dy), 1e-5) * (dy > 0 ? 1 : -1), rz = 1 / Math.max(absf(dz), 1e-5) * (dz > 0 ? 1 : -1);
+  const xa = (24 - ox) * rx, xb = (56 - ox) * rx, ya = (0 - oy) * ry, yb = (17 - oy) * ry, za = (24 - oz) * rz, zb = (56 - oz) * rz;
+  const tin = Math.max(Math.max(Math.min(xa, xb), Math.min(ya, yb)), Math.max(Math.min(za, zb), 0)), tout = Math.min(Math.min(Math.max(xa, xb), Math.max(ya, yb)), Math.max(za, zb)), s = tin + 0.002;
+  return tin < tout ? runDda(ox + dx * s, oy + dy * s, oz + dz * s, dx, dy, dz, v) : sky(v); }
+function pixel(pxi, pyi, a) { const u = pxi * 0.00390625 - 1, v = pyi * 0.00390625 - 1, ex = 40 + 30 * Math.cos(a), ey = 23, ez = 40 + 30 * Math.sin(a);
+  const fl = Math.hypot(40 - ex, 7 - ey, 40 - ez), fx = (40 - ex) / fl, fy = (7 - ey) / fl, fz = (40 - ez) / fl, rl = Math.hypot(fz, 0, -fx), rx = fz / rl, rz = -fx / rl;
+  const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy, dx = fx + 0.85 * u * rx + 0.85 * v * ux, dy = fy + 0.85 * v * uy, dz = fz + 0.85 * u * rz + 0.85 * v * uz, n = Math.hypot(dx, dy, dz);
+  return trace(ex, ey, ez, dx / n, dy / n, dz / n, Math.floor(pyi / 8) * 8); }
+const words = (a) => { const w = new Uint32Array(16); new Float32Array(w.buffer)[0] = a; return w; };
+page({ name: "voxel", K: 7, W: 512, H: 512, G: 7, leafSlots: 36, heap0: 8, wgsl: WGSL,
+  frames: (i) => words(0.7 + 0.012 * i), ref: (x, y, w) => pixel(x, y, new Float32Array(w.buffer)[0]) });
+</script></body></html>

@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Mandelbrot (Bend on WebGPU)</title>
+<style>.note{color:#7a8798;font-size:13px;margin:8px;max-width:760px}body{margin:0;background:#0b0e14;color:#c9d4e3;font:14px ui-monospace,Menlo,monospace}canvas{display:block}pre{margin:8px;white-space:pre-wrap;word-break:break-all}a{color:#59e3ff}</style></head>
+<body><canvas id="bend" tabindex="0"></canvas><pre id="bend-fps">starting on the GPU…</pre><pre id="bend-out"></pre>
+<p class="note">Mandelbrot 512×512 on WebGPU: the same program as the CPU page, in Bend's compiled form (task nodes, a join per fork, the quadtree walked by a raster kernel), 17 dispatches per frame. The CPU page does 4–5 ms a frame on ten cores. <code>?g=N</code> picks the fork levels (default 7). Numbers and the how on the <a href="index.html">index</a>.</p>
+<script type="module">
+import { page } from "./page.js";
+const fr = Math.fround;
+page({
+  name: "mandelbrot", K: 9, W: 512, H: 512, G: 7, leafSlots: 1, heap0: 8,
+  wgsl: `
+fn root_args() -> array<vec2<u32>, 3> { return array<vec2<u32>, 3>(imm(uv(0u)), imm(uv(1u)), imm(uv(2u))); }
+fn kid_s(j: u32, s: vec2<u32>) -> vec2<u32> { return imm(b(f(s.x) * 0.5)); }
+fn kid(i: u32, j: u32, x: vec2<u32>, y: vec2<u32>, h: vec2<u32>) -> array<vec2<u32>, 2> {
+  return array<vec2<u32>, 2>(imm(select(x.x, b(f(x.x) + f(h.x)), (i & 1u) == 1u)), imm(select(y.x, b(f(y.x) + f(h.x)), i >= 2u)));
+}
+// mand(50n, x, y, 0, 0, 0) then shade
+fn leaf(x: vec2<u32>, y: vec2<u32>, s: vec2<u32>) -> vec2<u32> {
+  let cx = f(x.x); let cy = f(y.x);
+  var zx = 0.0; var zy = 0.0; var i = 0u;
+  for (var n = 0u; n < 50u; n++) {
+    let xx = zx * zx; let yy = zy * zy; let esc = xx + yy > 4.0;
+    let nzx = select(xx - yy + cx, zx, esc);
+    let nzy = select(2.0 * zx * zy + cy, zy, esc);
+    let ni = select(i + 1u, i, esc);
+    zx = nzx; zy = nzy; i = ni;
+  }
+  let c = select(rgb(i * 5u, i * 2u, 60u + i * 3u), 0u, i > 49u);
+  let l = alloc(1u); st(l, imm(c)); return mk(TAG_CTR, CID_PIX, l);
+}`,
+  frames: (i) => { const w = new Uint32Array(16), fv = new Float32Array(w.buffer); fv[0] = -2.2 + 0.001 * (i % 5); fv[1] = -1.5; fv[2] = 3.0; return w; },
+  live: (i) => { const w = new Uint32Array(16), fv = new Float32Array(w.buffer); fv[0] = -2.2 + Math.sin(i * 0.01) * 0.05; fv[1] = -1.5; fv[2] = 3.0; return w; },
+  ref: (px, py, words) => {
+    const fv = new Float32Array(words.buffer); let x = fv[0], y = fv[1], s = fv[2];
+    for (let i = 8; i >= 0; i--) { const h = fr(s * 0.5); if ((px >> i) & 1) x = fr(x + h); if ((py >> i) & 1) y = fr(y + h); s = h; }
+    let zx = 0, zy = 0, n = 0;
+    for (let it = 0; it < 50; it++) { const xx = fr(zx * zx), yy = fr(zy * zy), esc = fr(xx + yy) > 4; const nzx = esc ? zx : fr(fr(xx - yy) + x); const nzy = esc ? zy : fr(fr(fr(2 * zx) * zy) + y); n = esc ? n : n + 1; zx = nzx; zy = nzy; }
+    return n > 49 ? 0 : n * 5 * 65536 + n * 2 * 256 + 60 + n * 3;
+  },
+});
+</script></body></html>
