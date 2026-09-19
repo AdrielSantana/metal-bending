@@ -522,7 +522,9 @@ valor em tempo de execução, `dda(U32.to_nat(60), ...)`, o `dda` volta a ser um
 loop (7.053 linhas no programa inteiro, 6 keeps) e o frame cai pela metade;
 `def fuel() -> Nat: 60n` é inlinado e desenrola igual. Nenhum dos guias fala
 disso, e o GUIDE ensina o combustível `Nat` como a forma de escrever um loop
-limitado.
+limitado. Registrado como
+[bendlang/bend#886](https://github.com/bendlang/bend/issues/886), e a #885
+ganhou a correção dos números.
 
 | 512², Metal, leitura emprestada | intocado | 300 blocos construídos |
 |---|---|---|
