@@ -12,7 +12,7 @@ CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
 ## Setup
 
-Bend **2.0.16** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
+Bend **2.0.17** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
 (o instalador escreveu em `~/.zshrc`). Precisa de um shell novo, ou:
 
 ```sh
