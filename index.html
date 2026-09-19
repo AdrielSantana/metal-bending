@@ -33,7 +33,7 @@
 <h1>BEND IN THE BROWSER</h1>
 <p class="lead">Bend programs running on every core of your machine, inside a web page. No GPU, no JavaScript backend: the same C runtime a native binary uses, compiled to WebAssembly.</p>
 
-<p>Each demo below is a <code>.bend</code> file built with <code>bend file.bend -o file.html</code> from <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a>: Emscripten compiles Bend's C runtime with <code>-pthread -mtail-call</code>, so the fork-join scheduler runs on a Web Worker per core and the segment machine's tail calls become wasm tail calls. A <code>Window</code> draws on a canvas, paced by the display; the line under it counts the frames the Bend program delivered. Add <code>?threads=1</code> to any demo to see what the cores buy.</p>
+<p>Each demo below is a <code>.bend</code> file built with <code>bend file.bend -o file.html</code> from <a href="https://github.com/bendlang/bend/pull/866">bendlang/bend#866</a>: Emscripten compiles Bend's C runtime with <code>-pthread -mtail-call</code>, so the fork-join scheduler runs on a Web Worker per core and the segment machine's tail calls become wasm tail calls. A <code>Window</code> draws on a canvas, paced by the display; the line under it counts the frames the Bend program delivered, and its selector picks how many cores to run on (the page reloads), so you can see what the cores buy.</p>
 
 <h2>Demos</h2>
 <a class="demo" href="mandelbrot.html"><b>Mandelbrot</b> — 512×512, the whole quadtree recomputed every frame with parallel calls. <span>60 fps on 10 cores, ~29 fps on one.</span></a>

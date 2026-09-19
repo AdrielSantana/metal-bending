@@ -7,15 +7,23 @@
     font: 14px/1.4 ui-monospace, monospace; }
   canvas { max-width: 100%; image-rendering: pixelated; outline: none; }
   pre { margin: 0; white-space: pre-wrap; max-width: 100%; }
+  select { font: inherit; color: inherit; background: #222; border: 1px solid #444; }
 </style>
 <canvas id="bend"></canvas>
-<pre id="bend-fps"></pre>
+<pre id="bend-fps"><select id="bend-threads"></select> threads, <span id="bend-rate"></span></pre>
 <pre id="bend-out"></pre>
 <script>
-  // ?threads=N runs on N cores. The page needs the headers
-  // Cross-Origin-Opener-Policy: same-origin and
+  // ?threads=N runs on N cores (the selector reloads with it). The page
+  // needs the headers Cross-Origin-Opener-Policy: same-origin and
   // Cross-Origin-Embedder-Policy: require-corp for its threads.
   var threads = new URLSearchParams(location.search).get("threads");
+  var cores   = navigator.hardwareConcurrency || 4;
+  var select  = document.getElementById("bend-threads");
+  for (var i = 1; i <= cores; i += 1) {
+    select.appendChild(new Option(i, i));
+  }
+  select.value = threads || cores;
+  select.onchange = function() { location.search = "?threads=" + select.value; };
   var bendSay = function(text) {
     document.getElementById("bend-out").textContent += text + "\n";
   };
@@ -33,8 +41,7 @@
   setInterval(function() {
     var n = Module.bendFrames | 0;
     if (n !== frames) {
-      document.getElementById("bend-fps").textContent = (n - frames)
-        + " fps, " + (threads || navigator.hardwareConcurrency) + " threads";
+      document.getElementById("bend-rate").textContent = (n - frames) + " fps";
     }
     frames = n;
   }, 1000);
