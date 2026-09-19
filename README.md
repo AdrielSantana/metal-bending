@@ -493,8 +493,11 @@ O primeiro frame de cada execução custa 43–54 ms nas duas versões: é a
 compilação do shader mais o aquecimento, descartado. Medido no 2.0.9; depois
 do update para o 2.0.16, os mesmos dez checksums e os mesmos tempos (4 ms
 intocado, 6–8 construído; a primeira execução com o binário novo custa mais,
-enquanto o shader recompila). O bitmask de "região editada" que eu ia tentar
-ficou obsoleto sem ser escrito.
+enquanto o shader recompila). O 2.0.17, do fim da mesma noite, muda a regra
+das anotações de operador (`( .. : T)` só vale para a expressão que envolve);
+os seis fontes de `gfx/` passam no `--check-only` dele e o Bendcraft dá os
+mesmos dez checksums e os mesmos 13 / 26 ms. O bitmask de "região editada"
+que eu ia tentar ficou obsoleto sem ser escrito.
 
 Com a leitura emprestada o demo subiu para **512²**, que é o que ele mostra
 hoje (a 256² ficava pixelado). Mesma medição, mesma forma de fork nos dois
@@ -511,6 +514,17 @@ que sobra no mundo construído é a travessia em si, cinco leituras dependentes
 por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
 por tile do guia. No browser, em WebAssembly, 512² faz 20 fps em dez threads
 e 5 em uma; a página de 256² continua no site, a 60.
+
+O site também tem o Bendcraft em **WebGPU** (`gpu_craft.html`, pelo seletor da
+página): o leaf traduzido à mão para WGSL, como nos outros três demos, e o
+mundo num buffer plano de 4 KB que a página edita em JavaScript — uma coluna
+não editada é a função do terreno na GPU, como no `WNone`. O frame custa
+**1,3 ms intocado e 1,4 ms com os 300 blocos**, e o checksum do frame (a soma
+do `total(9n)`, contando o tile 2×2 colapsado uma vez) é **igual ao do Bend
+nos dois mundos**: 751552256 e 351470114. Ou seja, a mesma imagem, e a parte
+que sobra no Bend (13 → 26 ms) é só a leitura da árvore: um buffer plano que
+as lanes pudessem emprestar dissolveria o custo, e é o que um `Array` num `!`
+não permite hoje ("a boxed parameter (not an `Array`)", diz o guia).
 
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
 uma IA, a decisão do Taelin, como as próprias respostas avisam):
