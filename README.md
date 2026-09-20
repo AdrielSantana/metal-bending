@@ -307,7 +307,7 @@ porque está errado.
 
 ## Bendcraft: mundo editável
 
-`gfx/05_craft.bend` — primeira pessoa, andar e pular, quebrar e colocar bloco, 512×512.
+`gfx/05_craft.bend` — primeira pessoa, andar e pular, quebrar e colocar bloco, mundo infinito, 512×512.
 
 ```sh
 bend gfx/05_craft.bend -o build/craft
@@ -323,8 +323,8 @@ pelos dois lados de uma chamada paralela** — inútil num renderizador onde tod
 pixel lê o mundo ao mesmo tempo. Desde o 2.0.22 um def `@unsafe` pode entregar
 o mesmo array aos dois lados do fork (duas alças para um bloco; `Array.join`
 devolve o bloco na volta), e é assim que o mundo desce até cada tile: um
-`Array<U32>` com as 32×32 colunas, cada uma **um U32 cujo bit `y` diz "tem
-bloco na altura y"**. Cada leitor recebe a alça e a devolve ao lado do valor
+`Array<U32>` com as 128×128 colunas em volta do jogador (a seção seguinte),
+cada uma **um U32 cujo bit `y` diz "tem bloco na altura y"**. Cada leitor recebe a alça e a devolve ao lado do valor
 (`Array.get` retorna `Array<U32> & U32`), do `Array.set` do host até o último
 passo do DDA. A forma vem dos testes do upstream (`tests/run/array_fork.bend`,
 `tests/run/stencil3d.bend`).
@@ -394,6 +394,38 @@ terreno ao achar `WNone`. Foi aqui que parei no dia 18, achando que o custo
 era tocar os nós compartilhados do topo por travessia. Não era a travessia:
 era a forma de escolher o quadrante, que fazia o compilador *contar* cada nó.
 "Onde isto parava" tem a regra, a correção e a medida (26–27 → 6–8 ms).
+
+### O mundo é infinito
+
+O terreno é um ruído de valor com três oitavas, semeado, e uma função pura de
+`(x, z)` como sempre foi. O que muda é o que o array guarda: um **anel de
+128×128 colunas em volta do jogador**, `[0 : U32^14n]`, mais um `Map<&2, U32>`
+com as colunas que o jogador editou (chave `"x,z"`). A coluna do mundo `(x, z)`
+mora no slot `x·128 + z`, e como `Array.get` embrulha o índice pelo tamanho,
+qualquer janela de 128×128 cai injetivamente nos 16384 slots — a coluna local
+`(lx, lz)` é `base + lx·128 + lz` com `base = ox·128 + oz`, e é essa uma
+palavra que todo leitor carrega. O renderizador e a física só enxergam
+coordenadas locais em `[0, 128)`, então a precisão do F32 não entra na
+conversa (a origem começa em 1048512 para andar para oeste nunca dar a volta
+no U32).
+
+O canto `(ox, oz)` segue o jogador uma coluna de cada vez, mantendo-o na coluna
+local 64: cada deslocamento carrega a fila de 128 colunas que entrou na vista
+(do Map se já foi editada, do ruído se não). Uma edição é um bit no anel e a
+coluna inteira no Map, então ela sobrevive a sair e voltar: o teste sem GUI
+edita a coluna 64,64, desloca o canto 130 vezes para longe e 130 de volta, e
+a coluna volta com o bit.
+
+O que isso custa: no Metal **3–7 ms por frame** em 512², intocado ou com 300
+blocos, o mesmo que o cubo de 32 (a névoa esconde a borda do anel a 48
+blocos; o raio anda até 60). A página wasm: 35–40 fps em dez threads, 8 em
+uma. O `Map` só é lido no host, uma fila por deslocamento.
+
+A primeira versão do ruído tinha um hash que era só um produto por eixo
+(`i·73856093 xor j·19349663`): nos oito texels da textura ninguém nota, mas a
+qualquer distância os bits 8–15 de um produto são uma rampa por eixo (período
+4 em z, 22 em x), e o terreno saía em faixas paralelas. O terreno usa um hash
+que mistura os bits; a textura ficou com o dela, idêntica.
 
 ### O visual: sol, textura, oclusão de ambiente, névoa
 
