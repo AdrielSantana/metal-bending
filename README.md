@@ -553,7 +553,14 @@ mesma imagem nas duas versões aqui) — e vale saber que o Chrome compila o WGS
 da página com fast math ligado por padrão, então o 1,3 ms do shader à mão teve
 essa vantagem. Isso é escolha do runtime, não do programa: é a
 [bendlang/bend#887](https://github.com/bendlang/bend/issues/887), a terceira
-pergunta da noite.
+pergunta da noite. Uma hipótese eliminada de fora: pressão de registradores
+no kernel único que carrega todos os segmentos. O `maxTotalThreadsPerThreadgroup`
+do pipeline é 1024 tanto com o leaf inteiro quanto com o leaf só de céu (a
+GPU da Apple baixa esse limite quando o shader usa registradores demais). O
+que sobra, uns 2,5 ms no raio contra 1,1 e o esqueleto em 1–2 contra 0,2, só
+uma captura no Metal debugger do Xcode atribui, e fica para depois das
+respostas. Com o Metal Toolchain instalado no fim da noite, o `bend -o` volta
+a gravar o `.gpu` ao lado do binário.
 
 O que sobra no mundo construído é a travessia em si, cinco leituras dependentes
 por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
