@@ -533,8 +533,9 @@ numa release, o `U32.to_nat(60)` do fonte pode voltar a ser `60n`.
 
 | 512², Metal, leitura emprestada | intocado | 300 blocos construídos |
 |---|---|---|
-| `dda(60n, ...)` (desenrolado) | 13 ms | 26 ms |
-| `dda(U32.to_nat(60), ...)` (loop) | **6 ms** | **17 ms** |
+| `dda(60n, ...)` (desenrolado, 2.0.17) | 13 ms | 26 ms |
+| `dda(U32.to_nat(60), ...)` (loop, 2.0.17) | **6 ms** | **17 ms** |
+| qualquer dos dois, 2.0.19 (fold corrigido, trig `fast::`) | **4 ms** | **14–16 ms** |
 
 **O que mais foi medido no custo base**, cada linha com os dez checksums
 idênticos, o timer só em volta do `!` (a soma do checksum no host custa 0–1 ms
@@ -558,7 +559,12 @@ mesma imagem nas duas versões aqui) — e vale saber que o Chrome compila o WGS
 da página com fast math ligado por padrão, então o 1,3 ms do shader à mão teve
 essa vantagem. Isso é escolha do runtime, não do programa: é a
 [bendlang/bend#887](https://github.com/bendlang/bend/issues/887), a terceira
-pergunta da noite. Uma hipótese eliminada de fora: pressão de registradores
+pergunta da noite. Respondida no 2.0.19: `sin`, `cos` e `tan` passam a ser
+`fast::` no Metal; `sqrt` e os outros continuam `precise::`, e o modo
+continua `MTLMathModeSafe`. Ele pediu a medida por nome, e ela diz que aqui a
+trigonometria era tudo: no 2.0.19, com `precise::` de volta 5–6 / 16–18 ms,
+como saiu 4 / 14–16, e mais `fast::sqrt` 4 / 13–16, mesmos checksums. O
+`sqrt` não é candidato nesta cena. Uma hipótese eliminada de fora: pressão de registradores
 no kernel único que carrega todos os segmentos. O `maxTotalThreadsPerThreadgroup`
 do pipeline é 1024 tanto com o leaf inteiro quanto com o leaf só de céu (a
 GPU da Apple baixa esse limite quando o shader usa registradores demais). O
