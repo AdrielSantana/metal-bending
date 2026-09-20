@@ -405,17 +405,20 @@ Com `p = o + d·t` o leaf:
   um segundo DDA de 24 passos a partir da célula de ar diante dela, e fica
   na sombra se algo estiver no caminho; virada para longe, fica na sombra
   sem raio;
-- **textura** — as duas coordenadas do ponto na face amostram um ruído de
-  valor (duas oitavas, contínuo entre blocos) que clareia ou escurece a cor;
-  a lateral de um bloco de grama é terra sob uma faixa verde;
-- **oclusão** — lê, pela alça que o laço trouxe de volta, as quatro colunas
-  vizinhas da célula de ar; cada vizinho sólido escurece a metade da face
-  que toca, mais perto da aresta;
+- **textura** — um tile de 8×8 texels, igual em todo bloco: cada texel é um
+  de quatro tons, tirado de um ruído suave amostrado no centro dele, então os
+  tons vêm em manchas, como pixel art; a lateral de um bloco de grama é terra
+  sob uma faixa verde;
+- **oclusão** — a do Minecraft, por vértice: lê, pela alça que o laço trouxe
+  de volta, as oito células em volta da célula de ar ao longo da face; cada
+  vértice tem três degraus de luz, tirados dos dois lados e da quina dele
+  (nenhum quando os dois lados são sólidos), e a face mistura os quatro;
 - **névoa** — mistura o resultado no céu da linha por `(t/48)²`.
 
-Medido no Metal com a máquina ociosa: **5–6 ms com tudo**, intocado e
-construído iguais (3–4 antes do visual). A página wasm faz 36 fps em dez
-threads e 8 em uma (56 e 10 antes).
+Medido no Metal com a máquina ociosa: **4–6 ms com tudo**, intocado e
+construído iguais (3–4 antes do visual; as oito leituras da oclusão são a
+maior parte). A página wasm faz 29–33 fps em dez threads e 7 em uma (56 e
+10 antes).
 
 ### Duas armadilhas O(n) no Base
 
