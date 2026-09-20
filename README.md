@@ -306,14 +306,14 @@ porque está errado.
 
 ## Bendcraft: mundo editável
 
-`gfx/05_craft.bend` — primeira pessoa, voo livre, quebrar e colocar bloco, 512×512.
+`gfx/05_craft.bend` — primeira pessoa, andar e pular, quebrar e colocar bloco, 512×512.
 
 ```sh
 bend gfx/05_craft.bend -o build/craft
 ./build/craft --gpu 2GB
 ```
 
-`W A S D` move · setas olham · `I`/`K` sobe e desce · `J` quebra · `L` coloca · `Esc` sai
+`W A S D` anda · `espaço` pula · arrastar o mouse olha (ou as setas) · clique quebra · botão direito coloca (ou `J`/`L`) · `Esc` sai
 
 ### O mundo é uma função mais uma árvore de edições
 
