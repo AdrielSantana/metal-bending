@@ -307,6 +307,13 @@ porque está errado.
 
 ## Bendcraft: mundo editável
 
+> **O Bendcraft virou um projeto próprio: [AdrielSantana/bendcraft](https://github.com/AdrielSantana/bendcraft)**,
+> com o código em módulos, testes, leis e a página em
+> [adrielsantana.github.io/bendcraft](https://adrielsantana.github.io/bendcraft/).
+> Este repositório fica como o caderno das medições; o `gfx/05_craft.bend`
+> daqui é o estado de 20/09/2026, o que as seções abaixo mediram, e não
+> muda mais. A história do arquivo (20 commits) seguiu junto para o novo repositório.
+
 `gfx/05_craft.bend` — primeira pessoa, andar e pular, quebrar e colocar bloco, mundo infinito, 512×512.
 
 ```sh

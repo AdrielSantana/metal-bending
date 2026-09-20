@@ -2,6 +2,10 @@ import Base
 
 # An interactive voxel world: walk, jump, break blocks, place blocks.
 #
+# THIS FILE IS FROZEN: the game moved to github.com/AdrielSantana/bendcraft
+# (modules, tests, laws, its own page). This is its state on 2026-09-20,
+# what this repository's README measured.
+#
 # THE WORLD IS ENDLESS, AND ONE ARRAY OF IT IS SHARED BY EVERY PIXEL.
 #
 # `Array` in Bend is a `Type`: one owner. Since Bend 2.0.22 an `@unsafe` def
