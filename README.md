@@ -524,7 +524,12 @@ loop (7.053 linhas no programa inteiro, 6 keeps) e o frame cai pela metade;
 disso, e o GUIDE ensina o combustível `Nat` como a forma de escrever um loop
 limitado. Registrado como
 [bendlang/bend#886](https://github.com/bendlang/bend/issues/886), e a #885
-ganhou a correção dos números.
+ganhou a correção dos números. O Taelin corrigiu no mesmo dia
+([20cfa67](https://github.com/bendlang/bend/commit/20cfa671c56af898681db8bbad58e506e17743cf):
+o fold conta nós do termo em vez de desdobramentos); verifiquei com esse
+commit que o `60n` literal passa a emitir o mesmo C do `U32.to_nat(60)`,
+7.053 linhas e 6 keeps, com os mesmos 6 / 17 ms e checksums. Quando isso sair
+numa release, o `U32.to_nat(60)` do fonte pode voltar a ser `60n`.
 
 | 512², Metal, leitura emprestada | intocado | 300 blocos construídos |
 |---|---|---|
