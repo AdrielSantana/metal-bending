@@ -580,21 +580,22 @@ uma captura no Metal debugger do Xcode atribui, e fica para depois das
 respostas. Com o Metal Toolchain instalado no fim da noite, o `bend -o` volta
 a gravar o `.gpu` ao lado do binário.
 
-O que sobra no mundo construído é a travessia em si, cinco leituras dependentes
-por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
-por tile do guia. No browser, em WebAssembly, 512² faz 20 fps em dez threads
-e 5 em uma; a página de 256² continua no site, a 60.
+O que sobrava no mundo construído era a travessia em si, cinco leituras
+dependentes por cruzamento de coluna. No browser, em WebAssembly, a versão em
+árvore fazia 20 fps em dez threads e 5 em uma (a de 256², 60); com o array do
+2.0.22 a página de 512² faz **56 fps em dez threads e 10 em uma**, e a de 256²
+saiu do site.
 
-O site também tem o Bendcraft em **WebGPU** (`gpu_craft.html`, pelo seletor da
-página): o leaf traduzido à mão para WGSL, como nos outros três demos, e o
-mundo num buffer plano de 4 KB que a página edita em JavaScript — uma coluna
-não editada é a função do terreno na GPU, como no `WNone`. O frame custa
+O site teve o Bendcraft em **WebGPU** até 20/09: o leaf traduzido à mão para
+WGSL, como nos outros três demos, e o mundo num buffer plano de 4 KB que a
+página editava em JavaScript — uma coluna não editada era a função do terreno
+na GPU, como no `WNone`. Foi a medição que sustentou a #885: o frame custava
 **1,3 ms intocado e 1,4 ms com os 300 blocos**, e o checksum do frame (a soma
-do `total(9n)`, contando o tile 2×2 colapsado uma vez) é **igual ao do Bend
+do `total(9n)`, contando o tile 2×2 colapsado uma vez) era **igual ao do Bend
 nos dois mundos**: 751552256 e 351470114. Ou seja, a mesma imagem, e a parte
-que sobra no Bend (6 → 17 ms) é só a leitura da árvore: um buffer plano que
-as lanes pudessem emprestar dissolveria o custo, e é o que um `Array` num `!`
-não permite hoje ("a boxed parameter (not an `Array`)", diz o guia). A
+que sobrava no Bend (6 → 17 ms) era só a leitura da árvore: um buffer plano que
+as lanes pudessem emprestar dissolveria o custo, e era o que um `Array` num `!`
+não permitia ("a boxed parameter (not an `Array`)", dizia o guia). A
 pergunta está na [bendlang/bend#885](https://github.com/bendlang/bend/issues/885):
 um `!` poderia emprestar um `Array` só para leitura, com estes números e o
 programa mínimo que o checker recusa ("consumed more than once" para `w`,
@@ -615,7 +616,12 @@ cada cruzamento de coluna um `Array.get` no passo do DDA, e a edição um
 
 Mesmos dez checksums nas duas linhas, e os mesmos do WGSL à mão. O mundo
 editável custa o que o estático custa; o que sobra contra o shader à mão
-(1,3 ms) é o custo base do código emitido, sem issue aberta.
+(1,3 ms) é o custo base do código emitido, sem issue aberta. Com isso a
+portagem à mão saiu do site: o jogo é escrito uma vez, em Bend, e as páginas
+(CPU, em WebAssembly) saem do mesmo fonte pelo fork da
+[PR #866](https://github.com/bendlang/bend/pull/866), rebaseado no 2.0.22
+nesta noite — o corpus novo cresce no lugar nos cores, o que o wasm32 não
+faz, então lá ele é um bloco só de 1 GiB.
 
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
 uma IA, a decisão do Taelin, como as próprias respostas avisam):
