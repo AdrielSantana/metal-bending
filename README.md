@@ -4,15 +4,16 @@ Playground do [Bend 2](https://bend-lang.com) — linguagem com sintaxe Python,
 semântica Haskell/Lean, afinidade tipo Rust, provas formais e paralelismo
 CPU/GPU. Rodando em Apple M5 (10 CPU / 8 GPU cores) via Metal.
 
-> **Estado (19/09/2026):** os renderizadores funcionam e estão medidos. O
+> **Estado (20/09/2026):** os renderizadores funcionam e estão medidos. O
 > mundo editável tinha parado num limite que eu achei ser da linguagem; o
-> upstream respondeu com a regra, e o Bendcraft com 300 blocos construídos caiu
-> de 26–27 para 6–8 ms — veja
+> upstream respondeu com a regra (26–27 → 6–8 ms) e depois com a primitiva
+> (2.0.22): o Bendcraft com 300 blocos construídos custa hoje o mesmo que
+> intocado, 3–5 ms em 512² — veja
 > [Onde isto parava — e a resposta](#onde-isto-parava--e-a-resposta).
 
 ## Setup
 
-Bend **2.0.19** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
+Bend **2.0.22** já está instalado em `~/.bend`, com `~/.bend/bin` no PATH
 (o instalador escreveu em `~/.zshrc`). Precisa de um shell novo, ou:
 
 ```sh
@@ -315,17 +316,23 @@ bend gfx/05_craft.bend -o build/craft
 
 `W A S D` anda · `espaço` pula · arrastar o mouse olha (ou as setas) · clique quebra · botão direito coloca (ou `J`/`L`) · `Esc` sai
 
-### O mundo é uma função mais uma árvore de edições
+### O mundo é um array, compartilhado pelo fork
 
-`Array` em Bend é `Type`: dono único, então **não pode ser lido pelos dois
-lados de uma chamada paralela** — inútil num renderizador onde todo pixel lê o
-mundo ao mesmo tempo. A primeira versão guardava as 32×32 colunas numa
-quadtree `Data` compartilhada, e ler essa árvore era 85% do frame.
+`Array` em Bend é `Type`: dono único, então até o 2.0.21 **não podia ser lido
+pelos dois lados de uma chamada paralela** — inútil num renderizador onde todo
+pixel lê o mundo ao mesmo tempo. Desde o 2.0.22 um def `@unsafe` pode entregar
+o mesmo array aos dois lados do fork (duas alças para um bloco; `Array.join`
+devolve o bloco na volta), e é assim que o mundo desce até cada tile: um
+`Array<U32>` com as 32×32 colunas, cada uma **um U32 cujo bit `y` diz "tem
+bloco na altura y"**. Cada leitor recebe a alça e a devolve ao lado do valor
+(`Array.get` retorna `Array<U32> & U32`), do `Array.set` do host até o último
+passo do DDA. A forma vem dos testes do upstream (`tests/run/array_fork.bend`,
+`tests/run/stencil3d.bend`).
 
-A versão atual guarda **só as edições**. O terreno é uma função pura de
-`(x, z)`; a árvore começa como um único `WNone` e cada edição do jogador cria
-um caminho de cinco nós. Um raio que encontra `WNone` calcula a coluna na hora.
-Cada folha é **um U32 cujo bit `y` diz "tem bloco na altura y"**.
+Antes disso o mundo era **só as edições**: o terreno uma função pura de
+`(x, z)`, uma quadtree que começava num `WNone` e crescia um caminho de cinco
+nós por edição, lida por uma caminhada emprestada — a história está em
+[Onde isto parava — e a resposta](#onde-isto-parava--e-a-resposta).
 
 32 alturas em uma palavra é o que torna isso viável: uma coluna é uma palavra
 de máquina, e quebrar/colocar é um bit.
@@ -593,6 +600,23 @@ um `!` poderia emprestar um `Array` só para leitura, com estes números e o
 programa mínimo que o checker recusa ("consumed more than once" para `w`,
 "expected Data, observed Type" para `+w`).
 
+**Respondida no 2.0.22** (20/09, à noite): um def `@unsafe` pode entregar um
+array aos dois lados do fork — `Array.fork` são duas alças para um bloco,
+`Array.join` o devolve, e `Array.atomic.*` opera no bloco compartilhado a
+partir das lanes. O Bendcraft passou a guardar o mundo num `Array<U32>` de
+1024 colunas, a alça descendo os sete níveis do fork e voltando pelos joins,
+cada cruzamento de coluna um `Array.get` no passo do DDA, e a edição um
+`Array.set` no host:
+
+| 512², Metal, Bend 2.0.22 | intocado | 300 blocos construídos |
+|---|---|---|
+| árvore de edições, leitura emprestada | 3–6 ms | 16–21 ms |
+| `Array<U32>` compartilhado pelo fork | **3–5 ms** | **3–5 ms** |
+
+Mesmos dez checksums nas duas linhas, e os mesmos do WGSL à mão. O mundo
+editável custa o que o estático custa; o que sobra contra o shader à mão
+(1,3 ms) é o custo base do código emitido, sem issue aberta.
+
 **As outras três issues**, todas respondidas e fechadas (a resposta escrita por
 uma IA, a decisão do Taelin, como as próprias respostas avisam):
 
@@ -622,9 +646,8 @@ uma IA, a decisão do Taelin, como as próprias respostas avisam):
   de paralelismo do guia (2.0.13).
 
 Para o que este repo se propôs — mostrar Bend renderizando no Metal e um mundo
-editável bit-exato — 6 ms intocado e 17 ms construído em 512² é o mundo
-editável a um passo do procedural, que era a expectativa; o passo que falta
-está na #885. Para
+editável bit-exato — 3–5 ms em 512², intocado ou construído, é o mundo
+editável ao preço do procedural, que era a expectativa. Para
 uma cena mais pesada o guia diz por onde: listas por tile no host.
 
 ## Publicado no BendHub

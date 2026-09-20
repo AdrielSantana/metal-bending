@@ -160,7 +160,9 @@ the GPU. The heap is fully unified, so, if your chip
 has unified memory (as in Apple M-series processors), moving data from the CPU
 to the GPU is a zero-cost operation. The GPU shines on uniform numeric work like
 mandelbrot or nbody; divergent work like n-queens stays faster on the CPU. A
-machine without a GPU runs `!` on the CPU (still in parallel).
+machine without a GPU runs `!` on the CPU (still in parallel). What the lanes
+share also sets the speed: a `+` value read by every lane costs an atomic per
+read. Read `bend guide shaders` before you write a parallel app.
 
 The JavaScript target ignores all that and just runs sequentially.
 
@@ -496,7 +498,8 @@ bend file.bend -o file.c  # emit the C source instead
 bend file.bend -o file.js # emit the JS source instead
 bend page.html -o dist    # bundle a web page that imports .bend files
 ./file --threads 8        # run a native binary on 8 CPU threads
-./file --gpu 4GB          # enables the GPU, with max 4GB memory
+./file --gpu off          # run ! calls on the CPU (the GPU is on by default)
+./file --gpu 4GB          # cap the GPU's heap at 4GB
 ```
 
 A `main` that returns `IO` runs compiled; one that returns a value is normalized
@@ -605,3 +608,14 @@ recursion must terminate. `bend2/bend.lean` mechanizes this, though it lags
 - `demos/`: complete programs, including the game and its proof from the video.
 - `bend2/base.bend`: the Base library, also printed by `bend base`.
 - `paper/BendTT.pdf` and `paper/BendRT.pdf`: the type theory and the runtime.
+
+## Extra
+
+`bend guide shaders` prints "Shaders in Bend", a tutorial written by AIs for
+AIs on how to write efficient shaders in Bend. It distills what building
+`demos/app_slash_boss_3d` (120 FPS in pure Bend) taught. Read it before you
+write a graphical or parallel app in Bend.
+
+`bend guide effects` prints "Effects in Bend", an AI-written note (to be
+revised by a human) on the C and JS side of custom effects. Read it before
+you write one.
