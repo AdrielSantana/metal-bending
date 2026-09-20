@@ -395,6 +395,18 @@ era tocar os nós compartilhados do topo por travessia. Não era a travessia:
 era a forma de escolher o quadrante, que fazia o compilador *contar* cada nó.
 "Onde isto parava" tem a regra, a correção e a medida (26–27 → 6–8 ms).
 
+### O visual: textura, oclusão de ambiente, névoa
+
+Depois do hit o laço devolve a cor da face, o eixo dela e o `t` da entrada no
+voxel; com `p = o + d·t` o leaf escolhe um texel 8×8 na face (um hash do
+texel clareia ou escurece a cor, igual em todo bloco, como um tile), lê pela
+alça que o laço trouxe de volta as quatro colunas vizinhas da célula de ar
+diante da face (cada vizinho sólido escurece a metade da face que toca, mais
+perto da aresta: a oclusão) e mistura o resultado no céu da linha por
+`(t/48)²`. Medido no Metal, melhor de três com um Chrome a 500% de CPU ao
+lado: 2–3 ms com textura e névoa, 5–7 com a oclusão, intocado e construído
+iguais; os quatro `Array.get` por pixel de hit são o custo.
+
 ### Duas armadilhas O(n) no Base
 
 Ambas me custaram caro, e a causa raiz é a mesma:
