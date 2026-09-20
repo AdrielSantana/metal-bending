@@ -551,8 +551,9 @@ elimina. As alocações da imagem não custam nada. O que custa é a trigonometr
 `precise::` que o runtime força no shader (um terço do frame intocado, com a
 mesma imagem nas duas versões aqui) — e vale saber que o Chrome compila o WGSL
 da página com fast math ligado por padrão, então o 1,3 ms do shader à mão teve
-essa vantagem. Isso é escolha do runtime, não do programa: uma pergunta para o
-Taelin.
+essa vantagem. Isso é escolha do runtime, não do programa: é a
+[bendlang/bend#887](https://github.com/bendlang/bend/issues/887), a terceira
+pergunta da noite.
 
 O que sobra no mundo construído é a travessia em si, cinco leituras dependentes
 por cruzamento de coluna; o próximo degrau é a árvore mais rasa ou as listas
