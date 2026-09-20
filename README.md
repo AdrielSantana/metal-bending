@@ -395,17 +395,27 @@ era tocar os nós compartilhados do topo por travessia. Não era a travessia:
 era a forma de escolher o quadrante, que fazia o compilador *contar* cada nó.
 "Onde isto parava" tem a regra, a correção e a medida (26–27 → 6–8 ms).
 
-### O visual: textura, oclusão de ambiente, névoa
+### O visual: sol, textura, oclusão de ambiente, névoa
 
-Depois do hit o laço devolve a cor da face, o eixo dela e o `t` da entrada no
-voxel; com `p = o + d·t` o leaf escolhe um texel 8×8 na face (um hash do
-texel clareia ou escurece a cor, igual em todo bloco, como um tile), lê pela
-alça que o laço trouxe de volta as quatro colunas vizinhas da célula de ar
-diante da face (cada vizinho sólido escurece a metade da face que toca, mais
-perto da aresta: a oclusão) e mistura o resultado no céu da linha por
-`(t/48)²`. Medido no Metal, melhor de três com um Chrome a 500% de CPU ao
-lado: 2–3 ms com textura e névoa, 5–7 com a oclusão, intocado e construído
-iguais; os quatro `Array.get` por pixel de hit são o custo.
+O laço do DDA devolve só o que o hit é (grama, terra ou pedra, e a face) e o
+`t` da entrada no voxel; a cara vem depois, num `match` que só um hit paga.
+Com `p = o + d·t` o leaf:
+
+- **sol** — uma face virada para o sol (direção `(0.48, 0.80, 0.36)`) lança
+  um segundo DDA de 24 passos a partir da célula de ar diante dela, e fica
+  na sombra se algo estiver no caminho; virada para longe, fica na sombra
+  sem raio;
+- **textura** — as duas coordenadas do ponto na face amostram um ruído de
+  valor (duas oitavas, contínuo entre blocos) que clareia ou escurece a cor;
+  a lateral de um bloco de grama é terra sob uma faixa verde;
+- **oclusão** — lê, pela alça que o laço trouxe de volta, as quatro colunas
+  vizinhas da célula de ar; cada vizinho sólido escurece a metade da face
+  que toca, mais perto da aresta;
+- **névoa** — mistura o resultado no céu da linha por `(t/48)²`.
+
+Medido no Metal com a máquina ociosa: **5–6 ms com tudo**, intocado e
+construído iguais (3–4 antes do visual). A página wasm faz 36 fps em dez
+threads e 8 em uma (56 e 10 antes).
 
 ### Duas armadilhas O(n) no Base
 
